@@ -77,8 +77,12 @@ def prepare_frontmatter_fields(draft):
 def _render_scalar(value):
     if value == "":
         return '""'
+    if value is None:
+        return "null"
     if isinstance(value, bool):
         return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return str(value)
     return str(value)
 
 
@@ -87,5 +91,39 @@ def _render_list(field, value):
         return [f"{field}: []"]
     lines = [f"{field}:"]
     for item in value:
-        lines.append(f"  - {item}")
+        lines.extend(_render_yaml_value(item, indent=2, list_item=True))
     return lines
+
+
+def _render_yaml_value(value, indent=0, list_item=False):
+    prefix = " " * indent
+    if isinstance(value, dict):
+        items = list(value.items())
+        if not items:
+            return [f"{prefix}- {{}}" if list_item else f"{prefix}{{}}"]
+        lines = []
+        first_key, first_value = items[0]
+        if _is_scalar(first_value):
+            lines.append(f"{prefix}- {first_key}: {_render_scalar(first_value)}" if list_item else f"{prefix}{first_key}: {_render_scalar(first_value)}")
+        else:
+            lines.append(f"{prefix}- {first_key}:" if list_item else f"{prefix}{first_key}:")
+            lines.extend(_render_yaml_value(first_value, indent=indent + 2))
+        for key, item_value in items[1:]:
+            if _is_scalar(item_value):
+                lines.append(f"{prefix}  {key}: {_render_scalar(item_value)}" if list_item else f"{prefix}{key}: {_render_scalar(item_value)}")
+            else:
+                lines.append(f"{prefix}  {key}:" if list_item else f"{prefix}{key}:")
+                lines.extend(_render_yaml_value(item_value, indent=indent + 2))
+        return lines
+    if isinstance(value, list):
+        if not value:
+            return [f"{prefix}[]"]
+        lines = []
+        for item in value:
+            lines.extend(_render_yaml_value(item, indent=indent, list_item=True))
+        return lines
+    return [f"{prefix}- {_render_scalar(value)}" if list_item else f"{prefix}{_render_scalar(value)}"]
+
+
+def _is_scalar(value):
+    return not isinstance(value, (dict, list))

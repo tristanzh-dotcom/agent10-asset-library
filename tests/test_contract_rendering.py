@@ -140,8 +140,8 @@ class ContractRenderingTests(unittest.TestCase):
             "created_at": "2026-07-04T10:00:00+08:00",
             "updated_at": "2026-07-04T10:00:00+08:00",
             "source_asset_path": "/tmp/source",
-            "source_refs": ["local-smoke-source"],
-            "input_refs": [],
+            "source_refs": [{"chunk_id": "Offer.md#13", "source_name": "Offer.md"}],
+            "input_refs": [{"type": "question", "text": "Who is Marcus?"}],
             "file_refs": [],
             "export_refs": [],
             "model_route": "local_only",
@@ -157,9 +157,11 @@ class ContractRenderingTests(unittest.TestCase):
         self.assertIn("asset_id: ast_20260704_a1b2c3d4\n", note)
         self.assertIn("source_content_hash: sha256:", note)
         self.assertIn('hash_source: ""\n', note)
+        self.assertIn("source_refs:\n  - chunk_id: Offer.md#13\n    source_name: Offer.md\n", note)
+        self.assertIn("input_refs:\n  - type: question\n    text: Who is Marcus?\n", note)
         self.assertIn("tags:\n  - agent/agent06\n  - workflow/ask\n", note)
         self.assertTrue(note.endswith("# PKA Answer Smoke\n\nSee [[Mantou]].\n"))
-        self.assertIsNone(re.search(r"^\s+\w+:", note, re.MULTILINE))
+        self.assertIsNone(re.search(r"^source_refs:\n  - \\{", note, re.MULTILINE))
 
 
 if __name__ == "__main__":

@@ -150,3 +150,75 @@
 - [x] Write failing tests for Knowledge Bridge confirmation, two-phase status updates, promotion journal, and retry-limit escalation.
 - [x] Implement minimum production code for all above.
 - [x] Run full test suite.
+
+### Task 7: Agent06 Adapter, Obsidian UI Validation, and Governance API Contract
+
+**Files:**
+- Create: `asset_library/adapters/__init__.py`
+- Create: `asset_library/adapters/agent06.py`
+- Create: `asset_library/governance.py`
+- Create: `asset_library/governance_api.py`
+- Create: `docs/OBSIDIAN_AGENT06_UI_GOVERNANCE_VALIDATION_20260704.md`
+- Modify: `asset_library/frontmatter.py`
+- Test: `tests/test_agent06_adapter.py`
+- Test: `tests/test_governance.py`
+- Test: `tests/test_governance_api.py`
+- Test: `tests/test_contract_rendering.py`
+
+**Interfaces:**
+- Produces: `discover_agent06_answers(pka_data_root)`
+- Produces: `agent06_answer_to_draft(asset_dir)`
+- Produces: `GovernanceService(...).snapshot()`
+- Produces: `governance_response(path, service)`
+
+- [x] Write failing tests for Agent06 V0 manifest/answer conversion.
+- [x] Implement Agent06 adapter without modifying Agent06 source directories.
+- [x] Live smoke real Agent06 asset through Obsidian REST and SQLite Mirror.
+- [x] Write failing tests for governance snapshot excluding note body.
+- [x] Implement governance service for writer health, mirror gaps, promotion journal, and schema drift.
+- [x] Write failing tests for `GET /api/asset-library/governance` route contract.
+- [x] Fix frontmatter rendering to emit YAML nested mappings instead of Python dict strings.
+- [x] Validate Obsidian tag index for Agent06 note.
+- [x] Record UI/governance validation evidence.
+- [x] Run full test suite.
+
+### Task 8: Production Vault Bootstrap
+
+**Files:**
+- Create: `asset_library/vault_bootstrap.py`
+- Test: `tests/test_vault_bootstrap.py`
+- Modify: `docs/OBSIDIAN_PHASE1_IMPLEMENTATION_STATUS_20260704.md`
+
+**Interfaces:**
+- Produces: `bootstrap_vault(vault_path, plugin_source=None)`
+
+- [x] Write failing tests for production Vault directory creation.
+- [x] Write failing tests for schema/template/index note creation.
+- [x] Write failing tests for copying Local REST API plugin without `data.json`.
+- [x] Write failing tests for idempotency and no overwrite of existing system notes.
+- [x] Implement production Vault bootstrap.
+- [x] Execute bootstrap for `/Users/tristanzh/agent/AgentAssetVault/`.
+- [x] Verify production Vault `.gitignore` and folder layout.
+- [x] Verify direct fallback writer can write a production smoke note.
+
+### Task 9: Producer API and CLI Contract
+
+**Files:**
+- Create: `asset_library/producer_api.py`
+- Create: `asset_library/cli.py`
+- Test: `tests/test_producer_api.py`
+- Test: `tests/test_cli.py`
+
+**Interfaces:**
+- Produces: `ProducerApiService(writer).ingest_draft(draft)`
+- Produces: `ProducerApiService(writer).ingest_producer_asset(producer_id, payload)`
+- Produces: `producer_response(method, path, body, service)`
+- Produces: `run_cli(argv, service)`
+
+- [x] Write failing tests for `POST /api/asset-library/drafts`.
+- [x] Write failing tests for `POST /api/asset-library/producers/agent06/assets`.
+- [x] Write failing tests for unknown producer rejection.
+- [x] Write failing tests for CLI `validate-draft`, `ingest-draft`, and `ingest-agent06`.
+- [x] Implement Producer API and CLI contract.
+- [x] Confirm Producer API does not modify child Agent code.
+- [x] Run full test suite.

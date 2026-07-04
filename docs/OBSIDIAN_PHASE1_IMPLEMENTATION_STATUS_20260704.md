@@ -155,6 +155,66 @@ Capabilities:
 - Records RAG-success / note-write-failure cases to promotion journal.
 - Provides reconciliation job with retry limit and `promotion_requires_manual_review` escalation.
 
+### Agent06 Adapter
+
+Implemented package:
+
+- `asset_library/adapters/agent06.py`
+
+Capabilities:
+
+- Discovers Agent06 V0 answer asset directories under `PKA_Data/assets/answers`.
+- Converts `manifest.json` and `answer.md` into unified Asset Draft.
+- Preserves Agent06 source refs, input question, model route, and file refs.
+- Keeps `knowledge_status: not_indexed` unless Agent06 V0 already marked the answer as indexed.
+- Does not modify the Agent06 source directory.
+
+### Agent Governance Service and API Contract
+
+Implemented package:
+
+- `asset_library/governance.py`
+- `asset_library/governance_api.py`
+
+Capabilities:
+
+- Returns writer health, mirror gap status, promotion journal status, and schema drift status.
+- Excludes note body and `body_markdown` from governance responses.
+- Defines `GET /api/asset-library/governance` route contract for later wiring into the local `3000` governance UI.
+
+### Production Vault Bootstrap
+
+Implemented package:
+
+- `asset_library/vault_bootstrap.py`
+
+Capabilities:
+
+- Creates the production Vault layout at `/Users/tristanzh/agent/AgentAssetVault/`.
+- Initializes Agent folders, workflow/subject/collection/export folders, attachment and system folders.
+- Creates schema, template, and home/index notes under `99_System/`.
+- Creates Vault `.gitignore` for Obsidian workspace state, Local REST API runtime secrets, attachments, tmp files, and logs.
+- Copies verified Obsidian Local REST API plugin files without copying `data.json`.
+- Is idempotent and does not overwrite existing system notes.
+
+### Producer API and CLI Contract
+
+Implemented package:
+
+- `asset_library/producer_api.py`
+- `asset_library/cli.py`
+
+Capabilities:
+
+- Defines `POST /api/asset-library/drafts`.
+- Defines `POST /api/asset-library/producers/{agent_id}/assets`.
+- Supports `agent06` producer through Agent10-owned adapter.
+- Defines CLI commands:
+  - `validate-draft <draft.json>`
+  - `ingest-draft <draft.json>`
+  - `ingest-agent06 <source_asset_path>`
+- Keeps producer integration inside Agent10; no child Agent code is modified.
+
 ## Verification
 
 Unit tests:
@@ -166,7 +226,7 @@ python3 -m unittest discover -s tests -v
 Observed result:
 
 ```text
-Ran 54 tests in 0.020s
+Ran 69 tests in 0.024s
 OK
 ```
 
@@ -202,13 +262,38 @@ Post spec-closure live smoke:
 01_Agents/Agent10/2026-07-04 - agent10 - Phase 1 Spec Closure Live Smoke - ast_20260704_spec54aa.md
 ```
 
+Agent06 adapter live smoke:
+
+- Converted real Agent06 V0 answer asset:
+  `/Users/tristanzh/Documents/PKA_Data/assets/answers/2026-07-03/ans_20260703204333_87b29e/`.
+- Wrote through Obsidian REST to test Vault.
+- Read-back confirmed standard YAML nested frontmatter and original `# marcus` answer body.
+- SQLite Mirror row was present and marked `agent_id: agent06`.
+
+```text
+01_Agents/Agent06/2026-07-04 - agent06 - marcus - ast_20260704_a6060001.md
+```
+
+Production Vault bootstrap smoke:
+
+- Created production Vault:
+  `/Users/tristanzh/agent/AgentAssetVault/`
+- Verified required folder layout.
+- Verified Local REST API plugin files were copied without `data.json`.
+- Verified production Vault `.gitignore` excludes workspace state, REST secret, attachments, tmp files, and logs.
+- Verified direct fallback writer can create a production smoke note:
+
+```text
+/Users/tristanzh/agent/AgentAssetVault/01_Agents/Agent10/2026-07-04 - agent10 - Production Vault Smoke - ast_20260704_prod0001.md
+```
+
 Security hygiene:
 
 - Local REST API runtime secret file is ignored by `.gitignore`:
   `validation/obsidian-test-vault/.obsidian/plugins/obsidian-local-rest-api/data.json`.
 - Temporary curl auth file was deleted:
   `/tmp/obsidian-local-rest-api.curlrc`.
-- Narrow secret scan found no checked-in `Bearer` token or `apiKey` literal outside the ignored plugin runtime secret.
+- Narrow secret scan found no checked-in bearer token or Local REST API key literal outside the ignored plugin runtime secret.
 
 ## Deferred
 
@@ -216,7 +301,8 @@ Security hygiene:
 - Real Obsidian note frontmatter update store for Knowledge Bridge.
 - Dataview / native view validation.
 - Obsidian Templates visual validation.
-- Production Vault bootstrap.
+- Wiring `GET /api/asset-library/governance` into the shared local `3000` web service.
+- Running Obsidian Local REST API inside the production Vault and generating its runtime `data.json` through Obsidian trust flow.
 
 ## Current Direction
 

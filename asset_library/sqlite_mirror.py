@@ -50,6 +50,25 @@ class SQLiteAssetMirror:
             ).fetchone()
         return row is not None
 
+    def count_assets(self):
+        with sqlite3.connect(self.db_path) as conn:
+            _ensure_schema(conn)
+            return conn.execute("select count(*) from assets").fetchone()[0]
+
+    def list_asset_frontmatter(self):
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            _ensure_schema(conn)
+            rows = conn.execute(
+                """
+                select asset_id, asset_schema_version, status, knowledge_status,
+                       source_status, sensitivity, source_content_hash, hash_source
+                from assets
+                order by asset_id
+                """
+            ).fetchall()
+        return [dict(row) for row in rows]
+
 
 class MirrorGapJournal:
     def __init__(self, journal_path, clock=None, archive_path=None):
