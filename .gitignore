@@ -1,0 +1,10 @@
+.DS_Store
+*.tmp
+*.log
+
+# Future local runtime/cache output should stay outside source control.
+.cache/
+tmp/
+
+# Local Obsidian plugin runtime secrets generated during validation.
+validation/obsidian-test-vault/.obsidian/plugins/obsidian-local-rest-api/data.json
