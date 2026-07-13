@@ -10,7 +10,6 @@ BOOTSTRAP_DIRECTORIES = (
     "01_Agents/Agent02",
     "01_Agents/Agent03",
     "01_Agents/Agent04",
-    "01_Agents/Agent05",
     "01_Agents/Agent06",
     "01_Agents/Agent07",
     "01_Agents/Agent08",
@@ -85,6 +84,7 @@ def _gitignore_text():
 .obsidian/workspace.json
 .obsidian/workspace-mobile.json
 .obsidian/plugins/obsidian-local-rest-api/data.json
+99_System/audit/.agent10-control.token
 90_Attachments/**
 *.tmp
 *.log

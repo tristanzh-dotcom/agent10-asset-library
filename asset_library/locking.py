@@ -75,12 +75,10 @@ class VaultWriteLock:
         os.fsync(self._handle.fileno())
 
 
-def recover_writer_state(vault_path, pid_exists=None, clock=None):
+def inspect_writer_state(vault_path, pid_exists=None):
     vault_path = Path(vault_path)
     pid_exists = _pid_exists if pid_exists is None else pid_exists
-    clock = clock or _now_utc8_iso
     audit_dir = vault_path / "99_System" / "audit"
-    audit_dir.mkdir(parents=True, exist_ok=True)
     report = {
         "tmp_files": _relative_tmp_files(vault_path),
         "stale_locks": [],
@@ -89,10 +87,26 @@ def recover_writer_state(vault_path, pid_exists=None, clock=None):
     lock_path = audit_dir / ".asset-writer.lock"
     metadata = _read_lock_metadata(lock_path)
     if metadata:
-        if pid_exists(int(metadata.get("pid", -1))):
+        try:
+            holder_pid = int(metadata.get("pid", -1))
+        except (TypeError, ValueError):
+            holder_pid = -1
+        if pid_exists(holder_pid):
             report["active_locks"].append(metadata)
         else:
             report["stale_locks"].append(metadata)
+    return report
+
+
+def recover_writer_state(vault_path, pid_exists=None, clock=None):
+    vault_path = Path(vault_path)
+    clock = clock or _now_utc8_iso
+    report = inspect_writer_state(vault_path, pid_exists=pid_exists)
+    audit_dir = vault_path / "99_System" / "audit"
+    if report["stale_locks"]:
+        audit_dir.mkdir(parents=True, exist_ok=True)
+        lock_path = audit_dir / ".asset-writer.lock"
+        for metadata in report["stale_locks"]:
             event = dict(metadata)
             event["recovered_at"] = clock()
             event_path = audit_dir / f"stale-lock-{event.get('operation_id', 'unknown')}.json"
@@ -100,7 +114,7 @@ def recover_writer_state(vault_path, pid_exists=None, clock=None):
                 json.dumps(event, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
                 encoding="utf-8",
             )
-            lock_path.write_text("", encoding="utf-8")
+        lock_path.write_text("", encoding="utf-8")
     return report
 
 

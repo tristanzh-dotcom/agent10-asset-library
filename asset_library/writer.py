@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from contextlib import nullcontext
 
 from .frontmatter import prepare_frontmatter_fields, render_note
 from .naming import generate_asset_id, sanitize_short_title
@@ -23,6 +24,7 @@ class RestFirstAssetWriter:
         mirror_gap_journal=None,
         asset_id_factory=None,
         collision_checker=None,
+        operation_lock_factory=None,
     ):
         self.rest_client = rest_client
         self.fallback_writer = fallback_writer
@@ -30,49 +32,69 @@ class RestFirstAssetWriter:
         self.mirror_gap_journal = mirror_gap_journal
         self.asset_id_factory = asset_id_factory or generate_asset_id
         self.collision_checker = collision_checker
+        self.operation_lock_factory = operation_lock_factory
 
     def write(self, draft):
-        draft = dict(draft)
-        draft.setdefault("asset_id", self.asset_id_factory())
-        draft = prepare_frontmatter_fields(draft)
-        errors = validate_draft(draft)
-        if errors:
-            raise ValueError("; ".join(errors))
+        if draft.get("asset_id"):
+            raise ValueError("normal drafts must not include asset_id")
+        return self._write(draft)
 
-        path = build_asset_note_path(draft)
-        collision = self._check_collision(draft, path)
-        if collision:
-            if collision.get("action") == "reuse_existing":
+    def write_migration(self, draft):
+        if not draft.get("asset_id"):
+            raise ValueError("controlled migration drafts must include asset_id")
+        return self._write(draft)
+
+    def _write(self, draft):
+        base = dict(draft)
+        caller_supplied_id = bool(base.get("asset_id"))
+        for attempt in range(5):
+            working = dict(base)
+            if not caller_supplied_id:
+                working["asset_id"] = self.asset_id_factory()
+            working = prepare_frontmatter_fields(working)
+            errors = validate_draft(working)
+            if errors:
+                raise ValueError("; ".join(errors))
+
+            path = build_asset_note_path(working)
+            lock = self._operation_lock(working["asset_id"])
+            with lock:
+                collision = self._check_collision(working, path)
+                if collision:
+                    if collision.get("action") == "reuse_existing":
+                        return AssetWriteResult(
+                            mode="idempotent_reuse",
+                            path=collision["vault_path"],
+                            asset_id=collision["asset_id"],
+                        )
+                    retryable = collision.get("action") in {"retry_asset_id", "reject"}
+                    if retryable and not caller_supplied_id and attempt < 4:
+                        continue
+                    raise ValueError(collision.get("reason", "asset collision rejected"))
+
+                markdown = render_note(working)
+                try:
+                    self.rest_client.write_note(path, markdown)
+                except Exception as exc:
+                    if self.fallback_writer is None:
+                        raise
+                    self.fallback_writer.write_note(path, markdown)
+                    mirror_status = self._upsert_mirror(working, path)
+                    return AssetWriteResult(
+                        mode="fallback",
+                        path=path,
+                        asset_id=working["asset_id"],
+                        mirror_status=mirror_status,
+                        error=str(exc),
+                    )
+                mirror_status = self._upsert_mirror(working, path)
                 return AssetWriteResult(
-                    mode="idempotent_reuse",
-                    path=collision["vault_path"],
-                    asset_id=collision["asset_id"],
+                    mode="rest",
+                    path=path,
+                    asset_id=working["asset_id"],
+                    mirror_status=mirror_status,
                 )
-            if collision.get("action") == "reject":
-                raise ValueError(collision.get("reason", "asset collision rejected"))
-
-        markdown = render_note(draft)
-        try:
-            self.rest_client.write_note(path, markdown)
-        except Exception as exc:
-            if self.fallback_writer is None:
-                raise
-            self.fallback_writer.write_note(path, markdown)
-            mirror_status = self._upsert_mirror(draft, path)
-            return AssetWriteResult(
-                mode="fallback",
-                path=path,
-                asset_id=draft["asset_id"],
-                mirror_status=mirror_status,
-                error=str(exc),
-            )
-        mirror_status = self._upsert_mirror(draft, path)
-        return AssetWriteResult(
-            mode="rest",
-            path=path,
-            asset_id=draft["asset_id"],
-            mirror_status=mirror_status,
-        )
+        raise ValueError("asset_id collision retry limit exhausted")
 
     def _upsert_mirror(self, draft, path):
         if self.mirror is None:
@@ -94,6 +116,11 @@ class RestFirstAssetWriter:
         if self.collision_checker is None:
             return None
         return self.collision_checker.check(draft, path)
+
+    def _operation_lock(self, asset_id):
+        if self.operation_lock_factory is None:
+            return nullcontext()
+        return self.operation_lock_factory(f"asset-write:{asset_id}")
 
 
 def build_asset_note_path(draft):

@@ -18,6 +18,9 @@ def run_cli(argv, service):
         if command == "ingest-draft":
             result = service.ingest_draft(_read_json_arg(argv, 1))
             return 0, json.dumps(result, ensure_ascii=False, sort_keys=True)
+        if command == "ingest-migration":
+            result = service.ingest_migration_draft(_read_json_arg(argv, 1))
+            return 0, json.dumps(result, ensure_ascii=False, sort_keys=True)
         if command == "ingest-agent06":
             if len(argv) < 2:
                 return 1, "source_asset_path is required"
@@ -35,4 +38,4 @@ def _read_json_arg(argv, index):
 
 
 def _usage():
-    return "usage: validate-draft <draft.json> | ingest-draft <draft.json> | ingest-agent06 <source_asset_path>"
+    return "usage: validate-draft <draft.json> | ingest-draft <draft.json> | ingest-migration <draft.json> | ingest-agent06 <source_asset_path>"

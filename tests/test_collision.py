@@ -1,6 +1,8 @@
 import unittest
+import tempfile
+from pathlib import Path
 
-from asset_library.collision import CollisionChecker, idempotent_key
+from asset_library.collision import CollisionChecker, VaultFilesystemCollisionProbe, idempotent_key
 
 
 class FakeRegistry:
@@ -76,6 +78,58 @@ class CollisionCheckerTests(unittest.TestCase):
 
     def test_allows_new_asset_when_no_collision_exists(self):
         self.assertIsNone(CollisionChecker(FakeRegistry()).check(draft(), "new.md"))
+
+    def test_rejects_real_vault_path_when_mirror_has_no_row(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            vault = Path(tmpdir)
+            note = vault / "01_Agents" / "Agent06" / "existing.md"
+            note.parent.mkdir(parents=True)
+            note.write_text("existing", encoding="utf-8")
+            checker = CollisionChecker(
+                FakeRegistry(),
+                vault_probe=VaultFilesystemCollisionProbe(vault),
+            )
+
+            result = checker.check(draft(), "01_Agents/Agent06/existing.md")
+
+            self.assertEqual(result["action"], "reject")
+            self.assertIn("real Vault", result["reason"])
+
+    def test_rejects_real_vault_asset_id_when_title_path_differs(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            vault = Path(tmpdir)
+            note = vault / "01_Agents" / "Agent06" / "2026-07-04 - agent06 - other - ast_20260704_a1b2c3d4.md"
+            note.parent.mkdir(parents=True)
+            note.write_text("existing", encoding="utf-8")
+            checker = CollisionChecker(
+                FakeRegistry(),
+                vault_probe=VaultFilesystemCollisionProbe(vault),
+            )
+
+            result = checker.check(draft(), "01_Agents/Agent06/new.md")
+
+            self.assertEqual(result["action"], "reject")
+            self.assertIn("asset_id exists in real Vault", result["reason"])
+
+    def test_rejects_stale_idempotent_mirror_entry_when_vault_note_is_missing(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            registry = FakeRegistry(
+                by_idempotent_key={
+                    idempotent_key(draft()): {
+                        "asset_id": "ast_20260704_existing",
+                        "vault_path": "01_Agents/Agent06/missing.md",
+                    }
+                }
+            )
+            checker = CollisionChecker(
+                registry,
+                vault_probe=VaultFilesystemCollisionProbe(tmpdir),
+            )
+
+            result = checker.check(draft(), "new.md")
+
+            self.assertEqual(result["action"], "reject")
+            self.assertIn("stale idempotent mirror entry", result["reason"])
 
 
 if __name__ == "__main__":

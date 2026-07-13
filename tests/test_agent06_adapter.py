@@ -71,6 +71,20 @@ class Agent06AdapterTests(unittest.TestCase):
 
             self.assertEqual(discover_agent06_answers(root), [asset_dir])
 
+    def test_agent06_tags_follow_actual_knowledge_status(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            asset_dir = Path(tmpdir)
+            (asset_dir / "answer.md").write_text("# Indexed", encoding="utf-8")
+            (asset_dir / "manifest.json").write_text(
+                json.dumps({"title": "Indexed", "rag_status": "indexed"}),
+                encoding="utf-8",
+            )
+
+            draft = agent06_answer_to_draft(asset_dir)
+
+            self.assertIn("knowledge/indexed", draft["tags"])
+            self.assertNotIn("knowledge/not-indexed", draft["tags"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -19,14 +19,15 @@ def agent06_answer_to_draft(asset_dir):
     manifest = json.loads((asset_dir / "manifest.json").read_text(encoding="utf-8"))
     body = (asset_dir / "answer.md").read_text(encoding="utf-8")
     source_refs = _source_refs(manifest.get("sources", []))
-    tags = _tags(manifest.get("tags", []))
+    knowledge_status = _knowledge_status(manifest.get("rag_status"))
+    tags = _tags(manifest.get("tags", []), knowledge_status)
     return {
         "agent_id": "agent06",
         "workflow_id": "ask",
         "asset_type": "agent06_pka_answer",
         "title": manifest.get("title") or manifest.get("question") or asset_dir.name,
         "status": "active",
-        "knowledge_status": _knowledge_status(manifest.get("rag_status")),
+        "knowledge_status": knowledge_status,
         "source_status": manifest.get("source_status", "unverified"),
         "sensitivity": "normal",
         "created_at": manifest.get("created_at", ""),
@@ -80,8 +81,8 @@ def _source_refs(sources):
     return refs
 
 
-def _tags(existing):
-    tags = ["agent/agent06", "workflow/ask", "type/pka-answer", "knowledge/not-indexed"]
+def _tags(existing, knowledge_status):
+    tags = ["agent/agent06", "workflow/ask", "type/pka-answer", f"knowledge/{knowledge_status.replace('_', '-')}"]
     for tag in existing:
         if tag not in tags:
             tags.append(tag)

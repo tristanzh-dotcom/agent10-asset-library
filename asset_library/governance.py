@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from .locking import recover_writer_state
+from .locking import inspect_writer_state, recover_writer_state
 from .schema_migration import normalize_asset_frontmatter
 
 
@@ -14,6 +14,7 @@ class GovernanceService:
         promotion_journal_path,
         pid_exists=None,
         clock=None,
+        mutation_handlers=None,
     ):
         self.vault_path = Path(vault_path)
         self.mirror = mirror
@@ -21,12 +22,12 @@ class GovernanceService:
         self.promotion_journal_path = Path(promotion_journal_path)
         self.pid_exists = pid_exists
         self.clock = clock
+        self.mutation_handlers = dict(mutation_handlers or {})
 
     def snapshot(self):
-        writer_state = recover_writer_state(
+        writer_state = inspect_writer_state(
             self.vault_path,
             pid_exists=self.pid_exists,
-            clock=self.clock,
         )
         mirror_gaps = self.mirror_gap_journal.read_gaps()
         promotions = _read_jsonl(self.promotion_journal_path)
@@ -63,6 +64,22 @@ class GovernanceService:
             "unsupported_count": len(unsupported),
             "unsupported_assets": unsupported,
         }
+
+    def run_mutation(self, action):
+        if action == "recover-writer":
+            return {
+                "action": action,
+                "status": "completed",
+                "writer_state": recover_writer_state(
+                    self.vault_path,
+                    pid_exists=self.pid_exists,
+                    clock=self.clock,
+                ),
+            }
+        handler = self.mutation_handlers.get(action)
+        if handler is None:
+            raise ValueError(f"unsupported governance mutation: {action}")
+        return {"action": action, "status": "completed", "result": handler()}
 
 
 def _read_jsonl(path):

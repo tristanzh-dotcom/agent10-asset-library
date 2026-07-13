@@ -2,7 +2,34 @@
 
 Date: 2026-07-04
 
-Status: Phase 1 core implemented and smoke-tested.
+Status: Phase 1 core hardened and assembled locally; production activation remains pending.
+
+## 2026-07-12 Production Activation
+
+- Production Vault `AgentAssetVault` is trusted and open in Obsidian 1.12.7.
+- Local REST API with MCP 4.1.3 is enabled on localhost HTTPS `127.0.0.1:27124`; insecure HTTP remains disabled.
+- Obsidian runtime configuration and Agent10 local control-token files are ignored by Vault Git rules and owner-readable only.
+- Agent10 now runs on `127.0.0.1:8010` and rejects direct requests without its local Bearer control token.
+- Shared Web `:3000` proxies the allowlisted governance route at `/api/agent10/governance`; it never sends the token or Obsidian credential to the browser.
+- Live verification passed for Obsidian HTTPS status, authenticated Agent10 governance, Web governance proxy, explicit `recover-writer` action, and unknown-route rejection.
+
+## 2026-07-11 Approved Decisions
+
+- Repeated idempotent keys reuse the existing asset without updating the note.
+- Normal producers cannot submit final asset IDs. Controlled migrations use a separate endpoint that denies access by default unless the host explicitly authorizes it.
+- Governance GET is side-effect free. Recovery, retry, reconciliation, and compaction are explicit mutation actions.
+- V1 integrates Agent06 only. Agent05 is retired and excluded from future Agent10 development.
+
+## 2026-07-11 Hardening
+
+- Draft validation rejects path-shaping IDs, malformed hashes and timestamps, unsupported schema versions, malformed references, and unsafe workflow/type identifiers before IO.
+- YAML-sensitive scalars round-trip through a standard YAML parser.
+- Generated asset IDs retry collisions up to five attempts.
+- REST writes and mirror updates support one shared Vault operation lock.
+- Mirror-gap journal replacement uses same-directory temporary files, fsync, and atomic replace.
+- Governance snapshots inspect state without creating or modifying Vault files.
+- Runtime composition assembles the REST client, fallback, mirror, collision checker, shared lock, Agent06-only producer service, and governance service.
+- Runtime rejects non-local or non-HTTPS REST URLs. Runtime credentials are required for writes but not local draft validation.
 
 ## Implemented
 
@@ -226,7 +253,7 @@ python3 -m unittest discover -s tests -v
 Observed result:
 
 ```text
-Ran 69 tests in 0.024s
+Ran 98 tests
 OK
 ```
 
@@ -303,6 +330,11 @@ Security hygiene:
 - Obsidian Templates visual validation.
 - Wiring `GET /api/asset-library/governance` into the shared local `3000` web service.
 - Running Obsidian Local REST API inside the production Vault and generating its runtime `data.json` through Obsidian trust flow.
+- Shared Web publication of the hardened governance routes.
+- Live Agent06 producer wiring from the Agent06-owned workflow into Agent10.
+- Agent05 is intentionally excluded because it is retired.
+- Mirror-gap retry and real promotion reconciliation remain unavailable until their production draft resolver, note store, and RAG adapter are approved and wired.
+- Promotion Journal component-level shared locking remains deferred with the real Knowledge Bridge integration; it is not exposed by the current Runtime.
 
 ## Current Direction
 

@@ -1,8 +1,10 @@
 import json
+import os
 import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from asset_library.sqlite_mirror import MirrorGapJournal, MirrorGapScanner, SQLiteAssetMirror
 
@@ -84,8 +86,35 @@ class SQLiteAssetMirrorTests(unittest.TestCase):
 
             self.assertEqual(count, 1)
 
+    def test_governance_reads_do_not_create_missing_indices(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mirror = SQLiteAssetMirror(Path(tmpdir) / "assets.sqlite3")
+            mirror.upsert_asset(valid_draft(), "example.md")
+            with sqlite3.connect(mirror.db_path) as conn:
+                conn.execute("drop index idx_assets_vault_path")
+
+            self.assertEqual(mirror.count_assets(), 1)
+            self.assertEqual(len(mirror.list_asset_frontmatter()), 1)
+
+            with sqlite3.connect(mirror.db_path) as conn:
+                indexes = {row[1] for row in conn.execute("pragma index_list(assets)")}
+            self.assertNotIn("idx_assets_vault_path", indexes)
+
 
 class MirrorGapJournalTests(unittest.TestCase):
+    def test_replace_gaps_uses_same_directory_atomic_replace(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            journal_path = Path(tmpdir) / ".mirror-gap.jsonl"
+            journal = MirrorGapJournal(journal_path)
+
+            with patch("asset_library.sqlite_mirror.os.replace", wraps=os.replace) as replace:
+                journal.replace_gaps([{"asset_id": "ast_1"}])
+
+            source, target = replace.call_args.args
+            self.assertEqual(Path(source).parent, journal_path.parent)
+            self.assertEqual(Path(target), journal_path)
+            self.assertEqual(json.loads(journal_path.read_text(encoding="utf-8"))["asset_id"], "ast_1")
+
     def test_append_gap_writes_jsonl_record(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             journal_path = Path(tmpdir) / ".mirror-gap.jsonl"

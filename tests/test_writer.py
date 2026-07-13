@@ -35,13 +35,27 @@ class FakeMirror:
 
 
 class FakeCollisionChecker:
-    def __init__(self, result=None):
+    def __init__(self, result=None, results=None):
         self.result = result
+        self.results = list(results or [])
         self.checks = []
 
     def check(self, draft, vault_path):
         self.checks.append((dict(draft), vault_path))
+        if self.results:
+            return self.results.pop(0)
         return self.result
+
+
+class FakeOperationLock:
+    def __init__(self, events):
+        self.events = events
+
+    def __enter__(self):
+        self.events.append("enter")
+
+    def __exit__(self, exc_type, exc, tb):
+        self.events.append("exit")
 
 
 class FakeGapJournal:
@@ -91,14 +105,14 @@ class RestFirstAssetWriterTests(unittest.TestCase):
         fallback = FakeFallbackWriter()
         writer = RestFirstAssetWriter(rest_client=rest, fallback_writer=fallback)
 
-        result = writer.write(valid_draft())
+        result = writer.write_migration(valid_draft())
 
         self.assertEqual(result.mode, "rest")
         self.assertEqual(len(rest.writes), 1)
         self.assertEqual(fallback.writes, [])
         path, markdown = rest.writes[0]
         self.assertEqual(path, "01_Agents/Agent06/2026-07-04 - agent06 - PKA Answer Smoke - ast_20260704_a1b2c3d4.md")
-        self.assertIn("asset_id: ast_20260704_a1b2c3d4", markdown)
+        self.assertIn('asset_id: "ast_20260704_a1b2c3d4"', markdown)
 
     def test_write_generates_asset_id_when_draft_does_not_provide_final_id(self):
         rest = FakeRestClient()
@@ -113,7 +127,7 @@ class RestFirstAssetWriterTests(unittest.TestCase):
 
         self.assertEqual(result.asset_id, "ast_20260704_deadbeef")
         self.assertIn("ast_20260704_deadbeef", result.path)
-        self.assertIn("asset_id: ast_20260704_deadbeef", rest.writes[0][1])
+        self.assertIn('asset_id: "ast_20260704_deadbeef"', rest.writes[0][1])
 
     def test_write_computes_source_content_hash_before_collision_check(self):
         rest = FakeRestClient()
@@ -121,7 +135,7 @@ class RestFirstAssetWriterTests(unittest.TestCase):
         draft = valid_draft()
         writer = RestFirstAssetWriter(rest_client=rest, collision_checker=checker)
 
-        writer.write(draft)
+        writer.write_migration(draft)
 
         checked_draft, _ = checker.checks[0]
         self.assertRegex(checked_draft["source_content_hash"], r"^sha256:[0-9a-f]{64}$")
@@ -134,11 +148,12 @@ class RestFirstAssetWriterTests(unittest.TestCase):
         draft["file_refs"] = [{"path": "deck.pptx", "identity": True, "bytes": b"ppt"}]
         writer = RestFirstAssetWriter(rest_client=rest)
 
-        writer.write(draft)
+        writer.write_migration(draft)
 
         markdown = rest.writes[0][1]
-        self.assertIn("hash_source: metadata_v1_plus_identity_attachment_sha256_list", markdown)
-        self.assertIn("source_content_hash: sha256:", markdown)
+        self.assertIn('hash_source: "metadata_v1_plus_identity_attachment_sha256_list"', markdown)
+        self.assertIn('source_content_hash: "sha256:', markdown)
+        self.assertNotIn("bytes:", markdown)
 
     def test_write_returns_existing_asset_without_rewriting_for_same_idempotent_key(self):
         rest = FakeRestClient()
@@ -151,7 +166,7 @@ class RestFirstAssetWriterTests(unittest.TestCase):
         )
         writer = RestFirstAssetWriter(rest_client=rest, collision_checker=checker)
 
-        result = writer.write(valid_draft())
+        result = writer.write_migration(valid_draft())
 
         self.assertEqual(result.mode, "idempotent_reuse")
         self.assertEqual(result.path, "01_Agents/Agent06/existing.md")
@@ -169,7 +184,7 @@ class RestFirstAssetWriterTests(unittest.TestCase):
         writer = RestFirstAssetWriter(rest_client=rest, collision_checker=checker)
 
         with self.assertRaises(ValueError) as context:
-            writer.write(valid_draft())
+            writer.write_migration(valid_draft())
 
         self.assertIn("asset_id collision", str(context.exception))
         self.assertEqual(rest.writes, [])
@@ -179,7 +194,7 @@ class RestFirstAssetWriterTests(unittest.TestCase):
         mirror = FakeMirror()
         writer = RestFirstAssetWriter(rest_client=rest, mirror=mirror)
 
-        result = writer.write(valid_draft())
+        result = writer.write_migration(valid_draft())
 
         self.assertEqual(result.mode, "rest")
         self.assertEqual(len(mirror.upserts), 1)
@@ -197,7 +212,7 @@ class RestFirstAssetWriterTests(unittest.TestCase):
             mirror_gap_journal=journal,
         )
 
-        result = writer.write(valid_draft())
+        result = writer.write_migration(valid_draft())
 
         self.assertEqual(result.mode, "rest")
         self.assertEqual(result.mirror_status, "gap_recorded")
@@ -223,7 +238,7 @@ class RestFirstAssetWriterTests(unittest.TestCase):
         )
 
         with self.assertRaises(RuntimeError) as context:
-            writer.write(valid_draft())
+            writer.write_migration(valid_draft())
 
         self.assertEqual(str(context.exception), "database is locked")
         self.assertEqual(len(rest.writes), 1)
@@ -234,7 +249,7 @@ class RestFirstAssetWriterTests(unittest.TestCase):
         fallback = FakeFallbackWriter()
         writer = RestFirstAssetWriter(rest_client=rest, fallback_writer=fallback)
 
-        result = writer.write(valid_draft())
+        result = writer.write_migration(valid_draft())
 
         self.assertEqual(result.mode, "fallback")
         self.assertEqual(result.error, "REST unavailable")
@@ -248,11 +263,66 @@ class RestFirstAssetWriterTests(unittest.TestCase):
         draft["status"] = "live"
 
         with self.assertRaises(ValueError) as context:
-            writer.write(draft)
+            writer.write_migration(draft)
 
         self.assertIn("status must be one of", str(context.exception))
         self.assertEqual(rest.writes, [])
         self.assertEqual(fallback.writes, [])
+
+    def test_generated_asset_id_collision_retries_before_writing(self):
+        rest = FakeRestClient()
+        checker = FakeCollisionChecker(
+            results=[
+                {"action": "retry_asset_id", "reason": "asset_id collision"},
+                None,
+            ]
+        )
+        ids = iter(["ast_20260704_deadbeef", "ast_20260704_cafebabe"])
+        draft = valid_draft()
+        del draft["asset_id"]
+        writer = RestFirstAssetWriter(
+            rest_client=rest,
+            collision_checker=checker,
+            asset_id_factory=lambda: next(ids),
+        )
+
+        result = writer.write(draft)
+
+        self.assertEqual(result.asset_id, "ast_20260704_cafebabe")
+        self.assertEqual(len(checker.checks), 2)
+        self.assertEqual(len(rest.writes), 1)
+
+    def test_write_serializes_rest_and_mirror_inside_operation_lock(self):
+        events = []
+
+        class OrderedRest(FakeRestClient):
+            def write_note(self, path, markdown):
+                events.append("rest")
+                super().write_note(path, markdown)
+
+        class OrderedMirror(FakeMirror):
+            def upsert_asset(self, draft, vault_path):
+                events.append("mirror")
+                super().upsert_asset(draft, vault_path)
+
+        writer = RestFirstAssetWriter(
+            rest_client=OrderedRest(),
+            mirror=OrderedMirror(),
+            operation_lock_factory=lambda operation_id: FakeOperationLock(events),
+        )
+
+        writer.write_migration(valid_draft())
+
+        self.assertEqual(events, ["enter", "rest", "mirror", "exit"])
+
+    def test_normal_write_rejects_caller_supplied_asset_id(self):
+        rest = FakeRestClient()
+        writer = RestFirstAssetWriter(rest_client=rest)
+
+        with self.assertRaisesRegex(ValueError, "normal drafts must not include asset_id"):
+            writer.write(valid_draft())
+
+        self.assertEqual(rest.writes, [])
 
 
 if __name__ == "__main__":

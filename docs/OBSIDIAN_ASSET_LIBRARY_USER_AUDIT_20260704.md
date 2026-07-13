@@ -2,7 +2,14 @@
 
 日期：2026-07-04
 
-状态：用户审计版 / 待 TZ 确认
+状态：V1 权威设计 / TZ 已确认
+
+2026-07-11 决策冻结：
+
+- 相同幂等 key 完全复用现有资产，不更新 note、不创建版本。
+- 普通 Producer 禁止提交最终 `asset_id`；历史迁移使用独立、默认拒绝的受控接口。
+- Governance GET 严格只读；恢复、重试、reconciliation、compact 使用显式 mutation 操作。
+- V1 只接入 Agent06。Agent05 已退役，不属于 Agent10 后续开发范围。
 
 项目目录：`/Users/tristanzh/agent/agent10-asset-library`
 
@@ -147,7 +154,7 @@
 
 ### Agent05：PPT 生成
 
-状态：业务运行中。
+状态：已退役；本节仅保留历史现状，不接入 Agent10 V1，也不列入后续开发范围。
 
 主要数据输入：
 
@@ -171,11 +178,10 @@
 - `work/ppt-maker/<task>/orchestration_prompt.md`
 - `work/ppt-maker/<task>/visual_preview/*`
 
-资产处理建议：
+资产处理决定：
 
-- 每次成功生成 PPT 应生成 Obsidian note。
-- `output.pptx` 作为附件或 source file 链接。
-- prompt、模板、preview、质量检查结果应进入 frontmatter 或正文。
+- 不新增 Agent05 producer、adapter、迁移任务或 V1 验收项。
+- 已存在的历史文件继续由原目录和既有治理流程管理。
 
 ### Agent06：个人知识库
 
@@ -424,7 +430,7 @@ promotion 采用两阶段流程：
 3. RAG ingest 成功后，回写 `knowledge_status: indexed`、`knowledge_index_id`、`knowledge_promoted_at`。
 4. RAG ingest 失败时，回写 `knowledge_status: promotion_failed`，并记录失败原因。
 5. 如果 RAG 已成功但 Obsidian 回写失败，必须写入独立 promotion journal，路径为 `99_System/audit/.promotion-journal.jsonl`，由 reconciliation job 后续修复 note 状态。
-6. reconciliation job 扫描 `promoting`、`promotion_failed` 和 promotion journal，重试或提示人工处理。触发规则：Unified Asset Writer 启动时必须运行一次，并提供手动运行入口；如果后续实现常驻服务，默认可每 15 分钟运行一次。单条 promotion 默认最多重试 3 次；超过上限后将 `knowledge_status` 置为 `promotion_requires_manual_review`，并在 `99_System/audit/` 写入人工处理记录。
+6. reconciliation job 扫描 `promoting`、`promotion_failed` 和 promotion journal，重试或提示人工处理。它只能通过显式、受控 mutation 操作触发，不在 GET 或 Runtime 构建时隐式执行。单条 promotion 默认最多重试 3 次；超过上限后将 `knowledge_status` 置为 `promotion_requires_manual_review`，并在 `99_System/audit/` 写入人工处理记录。
 
 ## 5. Obsidian Vault 目录方案
 
@@ -438,7 +444,6 @@ AgentAssetVault/
     Agent02/
     Agent03/
     Agent04/
-    Agent05/
     Agent06/
     Agent07/
     Agent08/
@@ -452,7 +457,6 @@ AgentAssetVault/
   90_Attachments/
     Agent02/
     Agent03/
-    Agent05/
     Agent06/
   95_Ledgers/
   99_System/
@@ -619,8 +623,6 @@ agent03_mcht_metric_record
 agent03_aquatic_report
 agent04_photo_collection
 agent04_search_result_set
-agent05_ppt_deck
-agent05_ppt_template_analysis
 agent06_pka_answer
 agent06_ingested_source_summary
 agent07_sentinel_lead
@@ -680,20 +682,9 @@ agent09_skill_deploy_audit
 4. 将 exports 写入 `export_refs`。
 5. 保持不自动加入知识库。
 
-### 第二优先级：Agent05
+### 已排除：Agent05
 
-原因：
-
-- 生成物天然是资产。
-- 输出目录结构清晰。
-- PPTX、edits、preview、prompt 都有复用价值。
-
-接入动作：
-
-1. 成功生成 `output.pptx` 后生成 note。
-2. 附加 prompt、template、quality result。
-3. 链接或复制 `output.pptx` 到 Vault attachments。
-4. 记录 `machine_extracted.json` 和 `edits.json`。
+决定：Agent05 已退役，不新增接入动作。
 
 ### 第三优先级：Agent03
 
@@ -797,17 +788,16 @@ agent09_skill_deploy_audit
 - 重复写入不会产生重复资产。
 - source path 不允许路径穿越。
 
-### Phase 4：Agent06 和 Agent05 接入
+### Phase 4：Agent06 接入
 
 交付：
 
 - Agent06 V0 资产迁移或同步。
-- Agent05 PPT 生成结果发布到 Vault。
 - 导出文件 refs。
 
 验收：
 
-- Obsidian 中能看到问答资料和 PPT 资料。
+- Obsidian 中能看到 Agent06 问答资料。
 - 附件可打开。
 - `knowledge_status` 默认 `not_indexed`。
 
@@ -1064,7 +1054,7 @@ V1 应只做以下事情：
 3. 建立 Asset Draft schema。
 4. 实现或设计 Unified Asset Writer。
 5. 接入 Agent06 V0 answer assets。
-6. 接入 Agent05 PPT output。
+6. Agent05 已退役，不纳入 V1 或后续开发范围。
 7. 明确不做自动 RAG promotion。
 8. 明确不迁移 Agent02/03/04 的底层数据库。
 

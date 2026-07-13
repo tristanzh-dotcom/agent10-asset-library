@@ -19,6 +19,10 @@ class VaultBootstrapTests(unittest.TestCase):
             self.assertTrue((vault / "99_System" / "schemas" / "asset_schema_v1.md").exists())
             self.assertTrue((vault / "99_System" / "templates" / "asset_note_template.md").exists())
             self.assertTrue((vault / "99_System" / "indexes" / "asset_library_home.md").exists())
+            self.assertIn(
+                "99_System/audit/.agent10-control.token",
+                (vault / ".gitignore").read_text(encoding="utf-8"),
+            )
             self.assertIn("created", result.actions)
 
     def test_bootstrap_copies_local_rest_plugin_without_runtime_secret(self):

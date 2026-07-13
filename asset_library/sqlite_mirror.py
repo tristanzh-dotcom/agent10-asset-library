@@ -1,4 +1,6 @@
 import json
+import os
+import secrets
 import sqlite3
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -51,14 +53,16 @@ class SQLiteAssetMirror:
         return row is not None
 
     def count_assets(self):
-        with sqlite3.connect(self.db_path) as conn:
-            _ensure_schema(conn)
+        if not self.db_path.exists():
+            return 0
+        with _connect_readonly(self.db_path) as conn:
             return conn.execute("select count(*) from assets").fetchone()[0]
 
     def list_asset_frontmatter(self):
-        with sqlite3.connect(self.db_path) as conn:
+        if not self.db_path.exists():
+            return []
+        with _connect_readonly(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
-            _ensure_schema(conn)
             rows = conn.execute(
                 """
                 select asset_id, asset_schema_version, status, knowledge_status,
@@ -101,10 +105,17 @@ class MirrorGapJournal:
 
     def replace_gaps(self, records):
         self.journal_path.parent.mkdir(parents=True, exist_ok=True)
-        with self.journal_path.open("w", encoding="utf-8") as handle:
+        tmp_path = self.journal_path.with_name(
+            f".{self.journal_path.name}.{secrets.token_hex(4)}.tmp"
+        )
+        with tmp_path.open("w", encoding="utf-8") as handle:
             for record in records:
                 handle.write(json.dumps(record, ensure_ascii=False, sort_keys=True))
                 handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp_path, self.journal_path)
+        _fsync_directory(self.journal_path.parent)
 
     def compact_resolved(self):
         records = self.read_gaps()
@@ -282,5 +293,19 @@ def _ensure_schema(conn):
     conn.execute("create index if not exists idx_assets_vault_path on assets(vault_path)")
 
 
+def _connect_readonly(db_path):
+    return sqlite3.connect(f"file:{Path(db_path).resolve()}?mode=ro", uri=True)
+
+
 def _now_utc8_iso():
     return datetime.now(timezone(timedelta(hours=8))).replace(microsecond=0).isoformat()
+
+
+def _fsync_directory(path):
+    if not hasattr(os, "O_DIRECTORY"):
+        return
+    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)

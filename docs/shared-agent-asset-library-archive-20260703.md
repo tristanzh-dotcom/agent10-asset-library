@@ -4,6 +4,8 @@
 
 状态：设计归档 / 待独立 Agent 接管
 
+> Historical archive. Active V1 decisions are defined in `docs/superpowers/specs/2026-07-11-agent10-v1-hardening-design.md`. Agent05 is retired and excluded from Agent10 development.
+
 当前来源对话：Agent06 资料库功能开发与发布验收
 
 ## 1. 核心结论

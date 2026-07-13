@@ -65,6 +65,20 @@ class GovernanceTests(unittest.TestCase):
             self.assertEqual(snapshot["schema_drift"]["unsupported_count"], 1)
             self.assertEqual(snapshot["schema_drift"]["unsupported_assets"], ["ast_bad"])
 
+    def test_snapshot_does_not_create_or_modify_vault_state(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            vault = Path(tmpdir) / "missing-vault"
+            service = GovernanceService(
+                vault_path=vault,
+                mirror=FakeMirror(),
+                mirror_gap_journal=MirrorGapJournal(vault / "99_System" / "audit" / ".mirror-gap.jsonl"),
+                promotion_journal_path=vault / "99_System" / "audit" / ".promotion-journal.jsonl",
+            )
+
+            service.snapshot()
+
+            self.assertFalse(vault.exists())
+
 
 if __name__ == "__main__":
     unittest.main()
