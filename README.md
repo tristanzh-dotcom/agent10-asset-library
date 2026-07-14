@@ -1,6 +1,6 @@
 # Agent10 Asset Library
 
-Agent10 is the Obsidian-first asset publishing and governance layer for high-value Agent outputs. V1 supports Agent06 only. Obsidian is the human-facing asset UI; Agent10 owns schema validation, safe writing, idempotency, the SQLite mirror, and operational governance.
+Agent10 is the Obsidian-first asset publishing and governance layer for high-value Agent outputs. V1 supports Agent06 only. Agent06's generated-knowledge workflow saves its local answer asset and publishes it through Agent10 to Obsidian when local Agent10 control authentication is configured. Obsidian is the human-facing asset UI; Agent10 owns schema validation, safe writing, idempotency, the SQLite mirror, and operational governance.
 
 ## Validate a Draft
 
@@ -49,6 +49,8 @@ Agent06 V0 assets use the Agent10-owned adapter:
 ```bash
 python3 -m asset_library ingest-agent06 /absolute/path/to/agent06/answer-asset
 ```
+
+In the Agent06 workflow, `POST /api/knowledge/add-generated` saves the local answer asset first and then calls the same local Agent10 producer route. If the local Agent10 control token is unavailable, the workflow returns a deferred state and does not claim that the asset reached Obsidian.
 
 Historical migrations that preserve an existing valid `asset_id` use the separate local command:
 

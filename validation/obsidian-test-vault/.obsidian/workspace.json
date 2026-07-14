@@ -11,13 +11,34 @@
             "id": "9b76f42f3e576e06",
             "type": "leaf",
             "state": {
-              "type": "graph",
-              "state": {},
-              "icon": "lucide-git-fork",
-              "title": "关系图谱"
+              "type": "bases",
+              "state": {
+                "file": "未命名.base",
+                "viewName": "表格"
+              },
+              "icon": "lucide-table",
+              "title": "未命名"
+            }
+          },
+          {
+            "id": "3cb5e41aee24d795",
+            "type": "leaf",
+            "state": {
+              "type": "canvas",
+              "state": {
+                "file": "未命名.canvas",
+                "viewState": {
+                  "x": 0,
+                  "y": 0,
+                  "zoom": 0
+                }
+              },
+              "icon": "lucide-layout-dashboard",
+              "title": "未命名"
             }
           }
-        ]
+        ],
+        "currentTab": 1
       }
     ],
     "direction": "vertical"
@@ -176,15 +197,17 @@
       "bases:新建数据库": false
     }
   },
-  "active": "9b76f42f3e576e06",
+  "active": "3cb5e41aee24d795",
   "lastOpenFiles": [
+    "2026-07-13.md",
+    "未命名.canvas",
+    "未命名.base",
+    "01_Agents/Agent06/2026-07-04 - agent06 - PKA Answer Smoke - ast_20260704_a1b2c3d4.md",
     "01_Agents/Agent06/2026-07-04 - agent06 - marcus - ast_20260704_a6060001.md",
     "01_Agents/Agent10/2026-07-04 - agent10 - Phase 1 Spec Closure Live Smoke - ast_20260704_spec54aa.md",
     "01_Agents/Agent10/2026-07-04 - agent10 - Phase 1 Live Smoke - ast_20260704_live001a.md",
     "01_Agents/Agent10/2026-07-04 - agent10 - API Write Smoke - ast_20260704_apiwrite.md",
-    "01_Agents/Agent06/2026-07-04 - agent06 - PKA Answer Smoke - ast_20260704_a1b2c3d4.md",
     "2026-07-04.md",
-    "未命名.canvas",
     "03_Subjects/Mantou.md",
     "01_Agents/Agent10"
   ]

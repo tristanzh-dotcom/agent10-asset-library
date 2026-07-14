@@ -2,7 +2,32 @@
 
 Date: 2026-07-04
 
-Status: Phase 1 core hardened and assembled locally; production activation remains pending.
+Status: Phase 1 is active locally. Agent06 is the sole enabled V1 producer and its workflow publishes answer assets to Obsidian through Agent10.
+
+## 2026-07-13 Agent06 Obsidian Producer Acceptance
+
+- TZ confirmed that the Agent06 workflow is connected to Obsidian.
+- The Agent06 `POST /api/knowledge/add-generated` workflow first saves its local answer asset, then publishes that asset directory to Agent10's local Agent06 producer endpoint when its local control token is configured.
+- Agent10 remains the governed intake: it validates the Agent06 draft, writes the Obsidian note, updates the rebuildable mirror, and serves the read-only governance snapshot.
+- Agent06 is the only enabled V1 producer. Agent05 remains retired and is excluded from all onboarding, migration, and runtime paths.
+- Acceptance evidence is recorded separately from this status statement: it must prove a real local source asset, the first producer outcome, identical-submission reuse, the governance snapshot, and direct unauthenticated rejection.
+
+### Acceptance evidence observed on 2026-07-13
+
+- A real Agent06 answer-asset directory with its manifest and Markdown answer was submitted through the local Agent10 Producer endpoint without reading or exposing its body.
+- The submission resolved to an existing Agent10 asset in `idempotent_reuse` mode. Repeating the same request returned the identical asset ID and did not change the matching Obsidian note.
+- The shared Web governance snapshot reported one mirrored asset, zero open mirror gaps, zero active or stale writer locks, zero temporary files, and zero unsupported-schema assets.
+- Direct Agent10 governance without its local control token returned `403`; the Web governance response contained no secret markers.
+- Focused Agent06 bridge tests passed (5 tests), and Agent10 focused plus full tests passed (17 focused / 103 full).
+
+## Staged Local-Agent Onboarding
+
+1. Stabilize Agent06 with end-to-end producer, idempotency, mirror, and recovery acceptance.
+2. Add Agent02 report assets after its report and export metadata contract is frozen.
+3. Add Agent04 search-result assets as metadata and references only; do not duplicate source photos.
+4. Add Agent03 only after health-record sensitivity, retention, deletion, and attachment policies are approved.
+5. Add Agent07 audit artifacts, then Agent08 read-only Git-governance evidence and Agent09 skill-release evidence.
+6. Keep Agent05 excluded. Each new producer requires its own adapter, schema contract, idempotency and recovery tests, Obsidian acceptance, and a governance-only Web update.
 
 ## 2026-07-12 Production Activation
 
