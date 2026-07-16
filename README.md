@@ -1,6 +1,6 @@
 # Agent10 Asset Library
 
-Agent10 is the Obsidian-first asset publishing and governance layer for high-value Agent outputs. V1 supports Agent06 only. Agent06's generated-knowledge workflow saves its local answer asset and publishes it through Agent10 to Obsidian when local Agent10 control authentication is configured. Obsidian is the human-facing asset UI; Agent10 owns schema validation, safe writing, idempotency, the SQLite mirror, and operational governance.
+Agent10 is the Obsidian-first asset publishing and governance layer for high-value Agent outputs. It supports the Agent06 generated-knowledge producer and the restricted `codex` development-capture producer. The latter can publish only local, audit-only development summaries through the same token-protected draft route; it does not bypass schema validation, safe writing, idempotency, the SQLite mirror, or operational governance. Obsidian is the human-facing asset UI; Agent10 owns publication and governance. See [the Codex capture design](docs/superpowers/specs/2026-07-16-codex-development-capture-design.md).
 
 ## Validate a Draft
 

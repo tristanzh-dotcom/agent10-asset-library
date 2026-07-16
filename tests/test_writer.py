@@ -171,6 +171,7 @@ class RestFirstAssetWriterTests(unittest.TestCase):
         self.assertEqual(result.mode, "idempotent_reuse")
         self.assertEqual(result.path, "01_Agents/Agent06/existing.md")
         self.assertEqual(result.asset_id, "ast_20260704_existing")
+        self.assertEqual(result.mirror_status, "reused")
         self.assertEqual(rest.writes, [])
 
     def test_write_rejects_collision_before_any_io(self):

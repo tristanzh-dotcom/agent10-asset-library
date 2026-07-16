@@ -25,7 +25,7 @@ REQUIRED_FIELDS = (
 )
 
 ASSET_ID_PATTERN = re.compile(r"^ast_\d{8}_[0-9a-f]{8}$")
-AGENT_ID_PATTERN = re.compile(r"^agent\d{2,}$")
+AGENT_ID_PATTERN = re.compile(r"^(?:agent\d{2,}|codex)$")
 SLUG_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 HASH_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
 REFERENCE_FIELDS = (
@@ -59,7 +59,7 @@ def validate_draft(draft):
             errors.append("asset_id date must be a valid calendar date")
     if "asset_schema_version" in draft and draft.get("asset_schema_version") != 1:
         errors.append("asset_schema_version must be 1")
-    _validate_pattern(errors, draft, "agent_id", AGENT_ID_PATTERN, "agent_id must match agent followed by two digits")
+    _validate_pattern(errors, draft, "agent_id", AGENT_ID_PATTERN, "agent_id must be codex or match agent followed by two digits")
     _validate_pattern(
         errors,
         draft,

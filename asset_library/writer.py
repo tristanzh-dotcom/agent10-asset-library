@@ -66,6 +66,7 @@ class RestFirstAssetWriter:
                             mode="idempotent_reuse",
                             path=collision["vault_path"],
                             asset_id=collision["asset_id"],
+                            mirror_status="reused",
                         )
                     retryable = collision.get("action") in {"retry_asset_id", "reject"}
                     if retryable and not caller_supplied_id and attempt < 4:
@@ -132,6 +133,8 @@ def build_asset_note_path(draft):
 
 
 def _agent_folder(agent_id):
+    if agent_id == "codex":
+        return "Codex"
     if agent_id.startswith("agent") and len(agent_id) >= 7:
         suffix = agent_id[5:7]
         if suffix.isdigit():

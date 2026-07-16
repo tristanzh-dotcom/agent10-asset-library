@@ -13,7 +13,7 @@ class ProducerApiService:
     def __init__(self, writer, adapters=None, allowed_agent_ids=None):
         self.writer = writer
         self.adapters = adapters or {"agent06": agent06_answer_to_draft}
-        self.allowed_agent_ids = set(allowed_agent_ids or {"agent06"})
+        self.allowed_agent_ids = set(allowed_agent_ids or {"agent06", "codex"})
 
     def ingest_draft(self, draft):
         if "asset_id" in draft:
