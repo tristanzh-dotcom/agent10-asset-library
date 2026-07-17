@@ -70,7 +70,7 @@ class ContractRenderingTests(unittest.TestCase):
 
         self.assertIn("asset_id must match ast_YYYYMMDD_<8hex>", errors)
         self.assertIn("asset_schema_version must be 1", errors)
-        self.assertIn("agent_id must match agent followed by two digits", errors)
+        self.assertIn("agent_id must be codex or match agent followed by two digits", errors)
         self.assertIn("workflow_id must contain only lowercase letters, digits, underscores, or hyphens", errors)
         self.assertIn("asset_type must contain only lowercase letters, digits, underscores, or hyphens", errors)
         self.assertIn("source_content_hash must match sha256:<64hex>", errors)

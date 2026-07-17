@@ -28,6 +28,9 @@ ASSET_ID_PATTERN = re.compile(r"^ast_\d{8}_[0-9a-f]{8}$")
 AGENT_ID_PATTERN = re.compile(r"^(?:agent\d{2,}|codex)$")
 SLUG_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 HASH_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
+TASK_ID_PATTERN = re.compile(r"^tsk_[0-9a-f]{32}$")
+CONTINUITY_KEY_PATTERN = re.compile(r"^cty_[0-9a-f]{32}$")
+PROJECT_ID_PATTERN = re.compile(r"^prj_[0-9a-f]{12}$")
 REFERENCE_FIELDS = (
     "source_refs",
     "input_refs",
@@ -89,6 +92,8 @@ def validate_draft(draft):
     for field in REFERENCE_FIELDS:
         _validate_reference_list(errors, draft, field)
 
+    _validate_capture_fields(errors, draft)
+
     tags = draft.get("tags", [])
     if not isinstance(tags, list):
         errors.append("tags must be a list")
@@ -100,6 +105,37 @@ def validate_draft(draft):
                 errors.append(f"tags[{index}] must not contain whitespace")
 
     return errors
+
+
+def _validate_capture_fields(errors, draft):
+    fields = {
+        "capture_kind", "task_id", "continuity_key", "task_status", "capture_status",
+        "quality_state", "quality_score", "verification_state", "project_id", "project_name",
+        "project_path", "started_at", "last_activity_at", "ended_at", "previous_task", "next_task",
+    }
+    is_task_summary = draft.get("agent_id") == "codex" and draft.get("asset_type") == "codex-development-task-summary"
+    present = fields & set(draft)
+    if not is_task_summary:
+        if present:
+            errors.append("capture-specific fields require codex-development-task-summary")
+        return
+    for field in fields - {"ended_at", "previous_task", "next_task"}:
+        if draft.get(field) in (None, ""):
+            errors.append(f"{field} is required for codex-development-task-summary")
+    _validate_enum(errors, draft, "capture_kind", ("task",))
+    _validate_pattern(errors, draft, "task_id", TASK_ID_PATTERN, "task_id must match tsk_<32hex>")
+    _validate_pattern(errors, draft, "continuity_key", CONTINUITY_KEY_PATTERN, "continuity_key must match cty_<32hex>")
+    _validate_pattern(errors, draft, "project_id", PROJECT_ID_PATTERN, "project_id must match prj_<12hex>")
+    _validate_enum(errors, draft, "task_status", ("active", "checkpoint", "handed_off", "completed", "dormant"))
+    _validate_enum(errors, draft, "capture_status", ("local", "publish_pending", "published"))
+    _validate_enum(errors, draft, "quality_state", ("publishable", "needs_enrichment", "insufficient_evidence", "ledger_only"))
+    _validate_enum(errors, draft, "verification_state", ("observed", "reported", "not_applicable", "missing", "mixed"))
+    score = draft.get("quality_score")
+    if not isinstance(score, int) or isinstance(score, bool) or not 0 <= score <= 100:
+        errors.append("quality_score must be an integer from 0 to 100")
+    for field in ("started_at", "last_activity_at", "ended_at"):
+        if draft.get(field) not in (None, "") and not _is_iso_timestamp(draft[field]):
+            errors.append(f"{field} must be an ISO 8601 timestamp")
 
 
 def _validate_enum(errors, draft, field, allowed):

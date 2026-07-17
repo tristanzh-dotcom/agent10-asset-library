@@ -1,5 +1,8 @@
 import unittest
 
+import yaml
+
+from asset_library.frontmatter import render_note
 from asset_library.producer_api import ProducerApiService
 from asset_library.schema import validate_draft
 from asset_library.writer import build_asset_note_path
@@ -63,6 +66,33 @@ class CodexCaptureProducerTests(unittest.TestCase):
         forbidden.pop("asset_id")
         with self.assertRaisesRegex(ValueError, "not enabled"):
             service.ingest_draft(forbidden)
+
+    def test_codex_task_summary_renders_flat_capture_properties(self):
+        draft = _draft()
+        draft.update({
+            "asset_type": "codex-development-task-summary",
+            "capture_kind": "task",
+            "task_id": "tsk_" + "a" * 32,
+            "continuity_key": "cty_" + "b" * 32,
+            "task_status": "completed",
+            "capture_status": "published",
+            "quality_state": "publishable",
+            "quality_score": 95,
+            "verification_state": "reported",
+            "project_id": "prj_123456789abc",
+            "project_name": "web",
+            "project_path": "/Users/tristanzh/agent/web",
+            "started_at": "2026-07-17T09:00:00+08:00",
+            "last_activity_at": "2026-07-17T10:00:00+08:00",
+            "ended_at": "2026-07-17T10:00:00+08:00",
+            "previous_task": "",
+            "next_task": "",
+        })
+        self.assertEqual([], validate_draft(draft))
+        parsed = yaml.safe_load(render_note(draft).split("---", 2)[1])
+        self.assertEqual("completed", parsed["task_status"])
+        self.assertEqual(95, parsed["quality_score"])
+        self.assertEqual("reported", parsed["verification_state"])
 
 
 if __name__ == "__main__":
