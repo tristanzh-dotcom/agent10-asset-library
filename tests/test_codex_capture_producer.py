@@ -94,6 +94,22 @@ class CodexCaptureProducerTests(unittest.TestCase):
         self.assertEqual(95, parsed["quality_score"])
         self.assertEqual("reported", parsed["verification_state"])
 
+    def test_codex_task_summary_preserves_v2_quality_properties(self):
+        draft = _draft()
+        draft.update({
+            "asset_type": "codex-development-task-summary", "capture_kind": "task",
+            "task_id": "tsk_" + "a" * 32, "continuity_key": "cty_" + "b" * 32,
+            "task_status": "completed", "capture_status": "published", "quality_state": "publishable",
+            "quality_score": 90, "verification_state": "reported", "project_id": "prj_123456789abc",
+            "project_name": "web", "project_path": "/tmp/web", "started_at": "2026-07-17T00:00:00+00:00",
+            "last_activity_at": "2026-07-17T00:00:00+00:00", "evidence_state": "sufficient",
+            "readability_state": "clear", "publication_eligibility": "published",
+        })
+        self.assertEqual([], validate_draft(draft))
+        parsed = yaml.safe_load(render_note(draft).split("---", 2)[1])
+        self.assertEqual("sufficient", parsed["evidence_state"])
+        self.assertEqual("clear", parsed["readability_state"])
+
 
 if __name__ == "__main__":
     unittest.main()

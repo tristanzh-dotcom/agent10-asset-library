@@ -6,6 +6,10 @@
 批准记录：2026-07-17，授权编写可直接进入代码修改的实施计划  
 范围：Codex Hooks、本地捕获运行时、Agent10 正式发布、Obsidian Vault 浏览与历史迁移  
 前序规格：`2026-07-16-codex-development-capture-design.md`
+后续补充规格：`2026-07-17-obsidian-capture-document-quality-v2-design.md`
+
+后续补充规格经 TZ 批准后，优先覆盖本文关于任务切分、质量维度、语义增强、
+任务卡编辑所有权、日报 Frontmatter、Base 兼容视图和现有派生文档重渲染的规则。
 
 ## 1. 权威边界
 

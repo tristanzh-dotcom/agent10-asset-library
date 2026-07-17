@@ -112,6 +112,7 @@ def _validate_capture_fields(errors, draft):
         "capture_kind", "task_id", "continuity_key", "task_status", "capture_status",
         "quality_state", "quality_score", "verification_state", "project_id", "project_name",
         "project_path", "started_at", "last_activity_at", "ended_at", "previous_task", "next_task",
+        "evidence_state", "readability_state", "publication_eligibility",
     }
     is_task_summary = draft.get("agent_id") == "codex" and draft.get("asset_type") == "codex-development-task-summary"
     present = fields & set(draft)
@@ -119,7 +120,7 @@ def _validate_capture_fields(errors, draft):
         if present:
             errors.append("capture-specific fields require codex-development-task-summary")
         return
-    for field in fields - {"ended_at", "previous_task", "next_task"}:
+    for field in fields - {"ended_at", "previous_task", "next_task", "evidence_state", "readability_state", "publication_eligibility"}:
         if draft.get(field) in (None, ""):
             errors.append(f"{field} is required for codex-development-task-summary")
     _validate_enum(errors, draft, "capture_kind", ("task",))
@@ -130,6 +131,9 @@ def _validate_capture_fields(errors, draft):
     _validate_enum(errors, draft, "capture_status", ("local", "publish_pending", "published"))
     _validate_enum(errors, draft, "quality_state", ("publishable", "needs_enrichment", "insufficient_evidence", "ledger_only"))
     _validate_enum(errors, draft, "verification_state", ("observed", "reported", "not_applicable", "missing", "mixed"))
+    _validate_enum(errors, draft, "evidence_state", ("sufficient", "partial", "insufficient"))
+    _validate_enum(errors, draft, "readability_state", ("clear", "duplicate", "conflicted", "verbose"))
+    _validate_enum(errors, draft, "publication_eligibility", ("blocked", "not_terminal", "ready", "publish_pending", "published"))
     score = draft.get("quality_score")
     if not isinstance(score, int) or isinstance(score, bool) or not 0 <= score <= 100:
         errors.append("quality_score must be an integer from 0 to 100")
