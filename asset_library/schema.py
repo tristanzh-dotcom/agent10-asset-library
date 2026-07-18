@@ -127,7 +127,12 @@ def _validate_capture_fields(errors, draft):
     _validate_pattern(errors, draft, "task_id", TASK_ID_PATTERN, "task_id must match tsk_<32hex>")
     _validate_pattern(errors, draft, "continuity_key", CONTINUITY_KEY_PATTERN, "continuity_key must match cty_<32hex>")
     _validate_pattern(errors, draft, "project_id", PROJECT_ID_PATTERN, "project_id must match prj_<12hex>")
-    _validate_enum(errors, draft, "task_status", ("active", "checkpoint", "handed_off", "completed", "dormant"))
+    _validate_enum(
+        errors,
+        draft,
+        "task_status",
+        ("active", "checkpoint", "handed_off", "completed", "dormant", "cancelled"),
+    )
     _validate_enum(errors, draft, "capture_status", ("local", "publish_pending", "published"))
     _validate_enum(errors, draft, "quality_state", ("publishable", "needs_enrichment", "insufficient_evidence", "ledger_only"))
     _validate_enum(errors, draft, "verification_state", ("observed", "reported", "not_applicable", "missing", "mixed"))

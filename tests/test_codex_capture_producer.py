@@ -110,6 +110,24 @@ class CodexCaptureProducerTests(unittest.TestCase):
         self.assertEqual("sufficient", parsed["evidence_state"])
         self.assertEqual("clear", parsed["readability_state"])
 
+    def test_codex_task_summary_accepts_cancelled_but_rejects_local_only_states(self):
+        base = _draft()
+        base.update({
+            "asset_type": "codex-development-task-summary", "capture_kind": "task",
+            "task_id": "tsk_" + "a" * 32, "continuity_key": "cty_" + "b" * 32,
+            "capture_status": "published", "quality_state": "publishable", "quality_score": 90,
+            "verification_state": "not_applicable", "project_id": "prj_123456789abc",
+            "project_name": "web", "project_path": "/tmp/web",
+            "started_at": "2026-07-17T00:00:00+00:00",
+            "last_activity_at": "2026-07-17T00:00:00+00:00",
+            "ended_at": "2026-07-17T00:00:00+00:00",
+        })
+        cancelled = dict(base, task_status="cancelled")
+        self.assertEqual([], validate_draft(cancelled))
+        for state in ("in_progress", "blocked", "pending_acceptance", "paused"):
+            with self.subTest(state=state):
+                self.assertTrue(any("task_status" in error for error in validate_draft(dict(base, task_status=state))))
+
 
 if __name__ == "__main__":
     unittest.main()
