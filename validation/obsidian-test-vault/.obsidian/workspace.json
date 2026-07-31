@@ -24,17 +24,14 @@
             "id": "3cb5e41aee24d795",
             "type": "leaf",
             "state": {
-              "type": "canvas",
+              "type": "markdown",
               "state": {
-                "file": "未命名.canvas",
-                "viewState": {
-                  "x": 0,
-                  "y": 0,
-                  "zoom": 0
-                }
+                "file": "01_Agents/Agent10/2026-07-04 - agent10 - API Write Smoke - ast_20260704_apiwrite.md",
+                "mode": "source",
+                "source": false
               },
-              "icon": "lucide-layout-dashboard",
-              "title": "未命名"
+              "icon": "lucide-file",
+              "title": "2026-07-04 - agent10 - API Write Smoke - ast_20260704_apiwrite"
             }
           }
         ],
@@ -197,18 +194,18 @@
       "bases:新建数据库": false
     }
   },
-  "active": "3cb5e41aee24d795",
+  "active": "47b039440760bf62",
   "lastOpenFiles": [
-    "2026-07-13.md",
+    "01_Agents/Agent06/2026-07-04 - agent06 - marcus - ast_20260704_a6060001.md",
+    "01_Agents/Agent06/2026-07-04 - agent06 - PKA Answer Smoke - ast_20260704_a1b2c3d4.md",
     "未命名.canvas",
     "未命名.base",
-    "01_Agents/Agent06/2026-07-04 - agent06 - PKA Answer Smoke - ast_20260704_a1b2c3d4.md",
-    "01_Agents/Agent06/2026-07-04 - agent06 - marcus - ast_20260704_a6060001.md",
+    "03_Subjects/Mantou.md",
+    "2026-07-13.md",
     "01_Agents/Agent10/2026-07-04 - agent10 - Phase 1 Spec Closure Live Smoke - ast_20260704_spec54aa.md",
     "01_Agents/Agent10/2026-07-04 - agent10 - Phase 1 Live Smoke - ast_20260704_live001a.md",
     "01_Agents/Agent10/2026-07-04 - agent10 - API Write Smoke - ast_20260704_apiwrite.md",
     "2026-07-04.md",
-    "03_Subjects/Mantou.md",
     "01_Agents/Agent10"
   ]
 }
