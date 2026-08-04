@@ -10,6 +10,13 @@ Validation is local and does not require Obsidian credentials:
 python3 -m asset_library validate-draft /absolute/path/to/draft.json
 ```
 
+Hardware drafts use the same read-only local boundary and do not write the
+Vault, copy attachments, or perform final acceptance:
+
+```bash
+python3 -m asset_library validate-hardware /absolute/path/to/hardware-draft.json
+```
+
 ## Runtime Configuration
 
 Commands that write assets require these environment variables:

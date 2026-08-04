@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+from .hardware_schema import validate_hardware_draft
 from .schema import validate_draft
 
 
@@ -12,6 +13,12 @@ def run_cli(argv, service):
         if command == "validate-draft":
             draft = _read_json_arg(argv, 1)
             errors = validate_draft(draft)
+            if errors:
+                return 1, "\n".join(errors)
+            return 0, "OK"
+        if command == "validate-hardware":
+            draft = _read_json_arg(argv, 1)
+            errors = validate_hardware_draft(draft)
             if errors:
                 return 1, "\n".join(errors)
             return 0, "OK"
@@ -38,4 +45,4 @@ def _read_json_arg(argv, index):
 
 
 def _usage():
-    return "usage: validate-draft <draft.json> | ingest-draft <draft.json> | ingest-migration <draft.json> | ingest-agent06 <source_asset_path>"
+    return "usage: validate-draft <draft.json> | validate-hardware <draft.json> | ingest-draft <draft.json> | ingest-migration <draft.json> | ingest-agent06 <source_asset_path>"

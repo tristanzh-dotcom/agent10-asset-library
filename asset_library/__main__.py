@@ -7,7 +7,7 @@ from .runtime import build_runtime
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     service = None
-    if not argv or argv[0] != "validate-draft":
+    if not argv or argv[0] not in {"validate-draft", "validate-hardware"}:
         service = build_runtime().producer_service
     status, output = run_cli(argv, service=service)
     stream = sys.stdout if status == 0 else sys.stderr

@@ -5,6 +5,7 @@ from pathlib import Path
 
 from asset_library.cli import run_cli
 from asset_library.__main__ import main
+from tests.test_hardware_schema import valid_model
 
 
 class FakeProducerService:
@@ -74,6 +75,34 @@ class CliTests(unittest.TestCase):
 
             self.assertEqual(status, 1)
             self.assertIn("agent_id is required", output)
+
+    def test_main_validate_hardware_does_not_require_runtime_credentials(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            draft_path = Path(tmpdir) / "hardware.json"
+            draft_path.write_text(json.dumps(valid_model()), encoding="utf-8")
+
+            status = main(["validate-hardware", str(draft_path)])
+
+            self.assertEqual(status, 0)
+
+    def test_validate_hardware_reads_json_and_returns_errors(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            valid_path = Path(tmpdir) / "hardware.json"
+            valid_path.write_text(json.dumps(valid_model()), encoding="utf-8")
+            invalid_path = Path(tmpdir) / "invalid-hardware.json"
+            invalid_path.write_text(json.dumps({"record_type": "device"}), encoding="utf-8")
+
+            valid_status, valid_output = run_cli(
+                ["validate-hardware", str(valid_path)], service=FakeProducerService()
+            )
+            invalid_status, invalid_output = run_cli(
+                ["validate-hardware", str(invalid_path)], service=FakeProducerService()
+            )
+
+            self.assertEqual(valid_status, 0)
+            self.assertEqual(valid_output, "OK")
+            self.assertEqual(invalid_status, 1)
+            self.assertIn("record_type", invalid_output)
 
     def test_ingest_draft_uses_producer_service(self):
         with tempfile.TemporaryDirectory() as tmpdir:
