@@ -128,6 +128,14 @@ class HardwareServiceTests(unittest.TestCase):
 
         self.assertEqual(result["photos"], [{"photo_id": "p0", "content_type": "image/jpeg", "alt": f"photo for {record['hardware_model_id']}"}])
 
+    def test_record_projection_includes_user_facing_chinese_display_name(self):
+        record = valid_model()
+        self.store.records.append(record)
+
+        result = self.service.get_record(record["hardware_model_id"])
+
+        self.assertEqual(result["display_name_zh"], "ESP32-S3 开发板")
+
     def test_photo_read_is_delegated_without_exposing_internal_reference(self):
         service = HardwareService(self.store, self.publisher, media_service=FakeMediaService())
 

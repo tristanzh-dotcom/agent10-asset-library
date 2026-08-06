@@ -9,6 +9,7 @@ from .config import resolve_vault_path
 from .filesystem_fallback import DirectFilesystemFallbackWriter
 from .governance import GovernanceService
 from .hardware_notes import HardwareNotePublisher
+from .hardware_indexes import HardwareIndexPublisher
 from .hardware_analysis import AnalysisEngine, build_openai_candidate_analyzer
 from .hardware_media import HardwareMediaService
 from .hardware_service import HardwareService
@@ -34,6 +35,7 @@ class AssetLibraryRuntime:
     producer_service: ProducerApiService
     hardware_store: HardwareStore
     hardware_publisher: HardwareNotePublisher
+    hardware_index_publisher: HardwareIndexPublisher
     hardware_service: HardwareService
     governance_service: GovernanceService
 
@@ -78,11 +80,17 @@ def build_runtime(env=None, config_path=None):
         ),
         operation_lock_factory=operation_lock,
     )
+    hardware_index_publisher = HardwareIndexPublisher(
+        rest_client=rest_client,
+        fallback_writer=fallback,
+        operation_lock_factory=operation_lock,
+    )
     hardware_publisher = HardwareNotePublisher(
         rest_client=rest_client,
         fallback_writer=fallback,
         store=hardware_store,
         operation_lock_factory=operation_lock,
+        index_publisher=hardware_index_publisher,
     )
     analysis_key = str(env.get("OPENAI_API_KEY", "")).strip()
     analysis_enabled = str(env.get("AGENT10_HARDWARE_ANALYSIS_ENABLED", "1")).strip().lower() not in {"0", "false", "no"}
@@ -129,6 +137,7 @@ def build_runtime(env=None, config_path=None):
         producer_service=producer_service,
         hardware_store=hardware_store,
         hardware_publisher=hardware_publisher,
+        hardware_index_publisher=hardware_index_publisher,
         hardware_service=hardware_service,
         governance_service=governance_service,
     )

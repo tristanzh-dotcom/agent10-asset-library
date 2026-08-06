@@ -8,6 +8,7 @@ from .hardware_intake import accept_hardware_intake, prepare_hardware_intake, sn
 from .hardware_sources import capture_reference, fetch_reference, parse_reference_input
 from .hardware_attachments import decode_image_payload, sanitize_image_payload, validate_image_payload
 from .hardware_analysis import AnalysisEngine
+from .hardware_labels import localized_hardware_name
 from .hardware_layouts import relation_projection
 
 
@@ -239,6 +240,9 @@ class HardwareService:
         if record is None:
             return None
         result = dict(record)
+        display_name_zh = localized_hardware_name(record_id, result)
+        if display_name_zh:
+            result["display_name_zh"] = display_name_zh
         result["photos"] = self.media_service.manifest(record_id) if self.media_service else []
         return result
 
@@ -290,6 +294,9 @@ def _public_intake(intake):
 
 def _inventory_projection(item, detail, photos):
     projection = {**item, "photos": photos}
+    display_name_zh = localized_hardware_name(item.get("item_id"), detail)
+    if display_name_zh:
+        projection["display_name_zh"] = display_name_zh
     if not isinstance(detail, dict):
         return projection
     for field in (

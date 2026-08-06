@@ -59,6 +59,7 @@ class RuntimeTests(unittest.TestCase):
             self.assertEqual(runtime.vault_path, Path(tmpdir).resolve())
             self.assertIsNotNone(runtime.hardware_store)
             self.assertIsNotNone(runtime.hardware_publisher)
+            self.assertIsNotNone(runtime.hardware_index_publisher)
             self.assertIsNotNone(runtime.hardware_service)
             self.assertIsNotNone(runtime.hardware_service.media_service)
 
