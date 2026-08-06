@@ -5,8 +5,10 @@ import os
 import secrets
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from .governance_api import governance_response
+from .hardware_api import hardware_response
 from .producer_api import producer_response
 from .runtime import build_runtime
 
@@ -24,10 +26,12 @@ class Agent10HttpApp:
             return _json_response(403, {"error": "loopback_required"})
         if not _has_control_token(headers, self.control_token):
             return _json_response(403, {"error": "control_authorization_required"})
-        if not path.startswith(API_PREFIX):
+        parsed = urlsplit(path)
+        route_path = parsed.path
+        if not route_path.startswith(API_PREFIX):
             return _json_response(404, {"error": "not_found"})
 
-        asset_path = "/api/asset-library" + path[len(API_PREFIX) :]
+        asset_path = "/api/asset-library" + route_path[len(API_PREFIX) :]
         if asset_path.startswith("/api/asset-library/governance"):
             status, response_headers, text = governance_response(
                 method,
@@ -36,6 +40,14 @@ class Agent10HttpApp:
                 mutation_authorized=True,
             )
             return status, response_headers, text.encode("utf-8")
+        if asset_path.startswith("/api/asset-library/hardware"):
+            return hardware_response(
+                method,
+                asset_path,
+                body,
+                self.runtime.hardware_service,
+                parsed.query,
+            )
         if asset_path.startswith("/api/asset-library/migrations/"):
             return _json_response(404, {"error": "not_found"})
         status, response_headers, text = producer_response(
@@ -81,6 +93,9 @@ def create_http_server(runtime, control_token, host="127.0.0.1", port=8010):
         def do_PUT(self):
             self._dispatch()
 
+        def do_PATCH(self):
+            self._dispatch()
+
         def do_DELETE(self):
             self._dispatch()
 
@@ -89,7 +104,7 @@ def create_http_server(runtime, control_token, host="127.0.0.1", port=8010):
             body = self.rfile.read(length) if length else b""
             status, headers, response_body = app.dispatch(
                 self.command,
-                self.path.split("?", 1)[0],
+                self.path,
                 {key.lower(): value for key, value in self.headers.items()},
                 body,
                 self.client_address[0],

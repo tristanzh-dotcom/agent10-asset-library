@@ -22,6 +22,28 @@ def run_cli(argv, service):
             if errors:
                 return 1, "\n".join(errors)
             return 0, "OK"
+        if command == "prepare-hardware":
+            draft = _read_json_arg(argv, 1)
+            if len(argv) < 5:
+                raise ValueError("channel, submitted_by, and operation_key are required")
+            result = _require_method(service, "submit")(
+                {
+                    "channel": argv[2],
+                    "submitted_by": argv[3],
+                    "operation_key": argv[4],
+                    "draft": draft,
+                }
+            )
+            return 0, json.dumps(result, ensure_ascii=False, sort_keys=True)
+        if command == "accept-hardware":
+            if len(argv) < 4:
+                raise ValueError("intake_id, accepted_by, and expected_snapshot_hash are required")
+            result = _require_method(service, "accept")(
+                argv[1],
+                argv[2],
+                argv[3],
+            )
+            return 0, json.dumps(result, ensure_ascii=False, sort_keys=True)
         if command == "ingest-draft":
             result = service.ingest_draft(_read_json_arg(argv, 1))
             return 0, json.dumps(result, ensure_ascii=False, sort_keys=True)
@@ -45,4 +67,17 @@ def _read_json_arg(argv, index):
 
 
 def _usage():
-    return "usage: validate-draft <draft.json> | validate-hardware <draft.json> | ingest-draft <draft.json> | ingest-migration <draft.json> | ingest-agent06 <source_asset_path>"
+    return (
+        "usage: validate-draft <draft.json> | validate-hardware <draft.json> | "
+        "prepare-hardware <draft.json> <channel> <submitted_by> <operation_key> | "
+        "accept-hardware <intake_id> <accepted_by> <expected_snapshot_hash> | "
+        "ingest-draft <draft.json> | ingest-migration <draft.json> | "
+        "ingest-agent06 <source_asset_path>"
+    )
+
+
+def _require_method(service, method_name):
+    method = getattr(service, method_name, None)
+    if method is None:
+        raise ValueError(f"configured service does not support {method_name}")
+    return method

@@ -41,6 +41,34 @@ class FakeProducerService:
         }
 
 
+class FakeHardwareService:
+    def __init__(self):
+        self.calls = []
+
+    def submit(self, payload):
+        self.calls.append(("submit", payload))
+        return {
+            "intake_id": "hwi_cli",
+            "record_type": payload["draft"]["record_type"],
+            "record_id": payload["draft"]["hardware_model_id"],
+            "snapshot_hash": "sha256:" + "a" * 64,
+            "draft_revision": 1,
+            "intake_status": "review_pending",
+            "status": "review_pending",
+            "outcome": "created",
+        }
+
+    def accept(self, intake_id, accepted_by, expected_snapshot_hash):
+        self.calls.append(("accept", intake_id, accepted_by, expected_snapshot_hash))
+        return {
+            "status": "published",
+            "record_id": "hwm_cli",
+            "path": "02_Hardware/10_Models/Controllers/HWM - CLI - hwm_cli.md",
+            "mode": "rest",
+            "mirror_status": "upserted",
+        }
+
+
 class CliTests(unittest.TestCase):
     def test_main_validate_draft_does_not_require_runtime_credentials(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -154,6 +182,35 @@ class CliTests(unittest.TestCase):
             self.assertEqual(status, 0)
             self.assertEqual(service.calls[0][0], "migration")
             self.assertEqual(json.loads(output)["asset_id"], "ast_20260711_deadbeef")
+
+    def test_prepare_hardware_uses_shared_intake_service(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            draft_path = Path(tmpdir) / "hardware.json"
+            draft_path.write_text(json.dumps(valid_model()), encoding="utf-8")
+            service = FakeHardwareService()
+
+            status, output = run_cli(
+                ["prepare-hardware", str(draft_path), "codex", "TZ", "op-cli"],
+                service=service,
+            )
+
+            self.assertEqual(status, 0)
+            self.assertEqual(service.calls[0][0], "submit")
+            self.assertEqual(service.calls[0][1]["operation_key"], "op-cli")
+            self.assertEqual(json.loads(output)["intake_id"], "hwi_cli")
+
+    def test_accept_hardware_uses_shared_acceptance_service(self):
+        service = FakeHardwareService()
+        expected_hash = "sha256:" + "a" * 64
+
+        status, output = run_cli(
+            ["accept-hardware", "hwi_cli", "TZ", expected_hash],
+            service=service,
+        )
+
+        self.assertEqual(status, 0)
+        self.assertEqual(service.calls[0], ("accept", "hwi_cli", "TZ", expected_hash))
+        self.assertEqual(json.loads(output)["status"], "published")
 
 
 if __name__ == "__main__":

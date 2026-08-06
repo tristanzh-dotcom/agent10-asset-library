@@ -8,6 +8,11 @@ from .collision import CollisionChecker, VaultFilesystemCollisionProbe
 from .config import resolve_vault_path
 from .filesystem_fallback import DirectFilesystemFallbackWriter
 from .governance import GovernanceService
+from .hardware_notes import HardwareNotePublisher
+from .hardware_analysis import AnalysisEngine, build_openai_candidate_analyzer
+from .hardware_media import HardwareMediaService
+from .hardware_service import HardwareService
+from .hardware_store import HardwareStore
 from .locking import VaultWriteLock
 from .obsidian_rest import ObsidianRestClient
 from .producer_api import ProducerApiService
@@ -27,6 +32,9 @@ class AssetLibraryRuntime:
     mirror_gap_journal: MirrorGapJournal
     writer: RestFirstAssetWriter
     producer_service: ProducerApiService
+    hardware_store: HardwareStore
+    hardware_publisher: HardwareNotePublisher
+    hardware_service: HardwareService
     governance_service: GovernanceService
 
 
@@ -44,6 +52,7 @@ def build_runtime(env=None, config_path=None):
     indexes_dir = vault_path / "99_System" / "indexes"
     lock_path = audit_dir / ".asset-writer.lock"
     mirror = SQLiteAssetMirror(indexes_dir / "assets.sqlite3")
+    hardware_store = HardwareStore(indexes_dir / "hardware.sqlite3")
     gap_journal = MirrorGapJournal(audit_dir / ".mirror-gap.jsonl")
     fallback = DirectFilesystemFallbackWriter(vault_path, use_internal_lock=False)
     rest_client = ObsidianRestClient(base_url=base_url, api_key=api_key, verify_tls=False)
@@ -69,6 +78,34 @@ def build_runtime(env=None, config_path=None):
         ),
         operation_lock_factory=operation_lock,
     )
+    hardware_publisher = HardwareNotePublisher(
+        rest_client=rest_client,
+        fallback_writer=fallback,
+        store=hardware_store,
+        operation_lock_factory=operation_lock,
+    )
+    analysis_key = str(env.get("OPENAI_API_KEY", "")).strip()
+    analysis_enabled = str(env.get("AGENT10_HARDWARE_ANALYSIS_ENABLED", "1")).strip().lower() not in {"0", "false", "no"}
+    analysis_model = str(env.get("AGENT10_HARDWARE_ANALYSIS_MODEL", "gpt-5.5")).strip() or "gpt-5.5"
+    hardware_analyzer = build_openai_candidate_analyzer(analysis_key, model=analysis_model) if analysis_enabled else None
+    hardware_analysis_engine = AnalysisEngine(
+        hardware_store,
+        analyzer=hardware_analyzer,
+        attachment_root=audit_dir / "hardware-drafts",
+    )
+    hardware_media_service = HardwareMediaService(
+        store=hardware_store,
+        vault_path=vault_path,
+        attachment_root=audit_dir / "hardware-drafts",
+    )
+    hardware_service = HardwareService(
+        store=hardware_store,
+        publisher=hardware_publisher,
+        attachment_root=audit_dir / "hardware-drafts",
+        operator_id=str(env.get("AGENT10_OPERATOR_ID", "TZ")).strip() or "TZ",
+        analysis_engine=hardware_analysis_engine,
+        media_service=hardware_media_service,
+    )
     producer_service = ProducerApiService(writer=writer)
     governance_service = GovernanceService(
         vault_path=vault_path,
@@ -90,6 +127,9 @@ def build_runtime(env=None, config_path=None):
         mirror_gap_journal=gap_journal,
         writer=writer,
         producer_service=producer_service,
+        hardware_store=hardware_store,
+        hardware_publisher=hardware_publisher,
+        hardware_service=hardware_service,
         governance_service=governance_service,
     )
 

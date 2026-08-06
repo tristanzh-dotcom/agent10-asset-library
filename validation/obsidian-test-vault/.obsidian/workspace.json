@@ -11,10 +11,14 @@
             "id": "9b76f42f3e576e06",
             "type": "leaf",
             "state": {
-              "type": "empty",
-              "state": {},
+              "type": "markdown",
+              "state": {
+                "file": "01_Agents/Agent10/2026-07-04 - agent10 - Phase 1 Spec Closure Live Smoke - ast_20260704_spec54aa.md",
+                "mode": "source",
+                "source": false
+              },
               "icon": "lucide-file",
-              "title": "新标签页"
+              "title": "2026-07-04 - agent10 - Phase 1 Spec Closure Live Smoke - ast_20260704_spec54aa"
             }
           }
         ]
@@ -178,20 +182,20 @@
       "bases:新建数据库": false
     }
   },
-  "active": "47b039440760bf62",
+  "active": "9b76f42f3e576e06",
   "lastOpenFiles": [
+    "01_Agents/Agent10/2026-07-04 - agent10 - Phase 1 Live Smoke - ast_20260704_live001a.md",
+    "01_Agents/Agent10/2026-07-04 - agent10 - API Write Smoke - ast_20260704_apiwrite.md",
+    "01_Agents/Agent10/2026-07-04 - agent10 - Phase 1 Spec Closure Live Smoke - ast_20260704_spec54aa.md",
+    "未命名.canvas",
     "2026-07-13.md",
     "2026-08-02.md",
     "未命名.base",
     "未命名 1.base",
     "未命名 1.canvas",
-    "未命名.canvas",
-    "01_Agents/Agent10/2026-07-04 - agent10 - API Write Smoke - ast_20260704_apiwrite.md",
     "01_Agents/Agent06/2026-07-04 - agent06 - marcus - ast_20260704_a6060001.md",
     "01_Agents/Agent06/2026-07-04 - agent06 - PKA Answer Smoke - ast_20260704_a1b2c3d4.md",
     "03_Subjects/Mantou.md",
-    "01_Agents/Agent10/2026-07-04 - agent10 - Phase 1 Spec Closure Live Smoke - ast_20260704_spec54aa.md",
-    "01_Agents/Agent10/2026-07-04 - agent10 - Phase 1 Live Smoke - ast_20260704_live001a.md",
     "2026-07-04.md",
     "01_Agents/Agent10"
   ]

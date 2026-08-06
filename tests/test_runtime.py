@@ -57,6 +57,10 @@ class RuntimeTests(unittest.TestCase):
             self.assertIsNotNone(runtime.writer.operation_lock_factory)
             self.assertFalse(runtime.fallback_writer.use_internal_lock)
             self.assertEqual(runtime.vault_path, Path(tmpdir).resolve())
+            self.assertIsNotNone(runtime.hardware_store)
+            self.assertIsNotNone(runtime.hardware_publisher)
+            self.assertIsNotNone(runtime.hardware_service)
+            self.assertIsNotNone(runtime.hardware_service.media_service)
 
     def test_recovery_is_explicit_and_not_run_during_runtime_construction(self):
         with tempfile.TemporaryDirectory() as tmpdir:

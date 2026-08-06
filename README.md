@@ -17,6 +17,64 @@ Vault, copy attachments, or perform final acceptance:
 python3 -m asset_library validate-hardware /absolute/path/to/hardware-draft.json
 ```
 
+Hardware submissions from Codex use the same intake and final-acceptance
+service as the Web entry point. The first command only creates a
+`review_pending` snapshot; the second accepts that exact hash and publishes it
+under `02_Hardware/`:
+
+```bash
+python3 -m asset_library prepare-hardware \
+  /absolute/path/to/hardware-draft.json codex TZ operation-key
+python3 -m asset_library accept-hardware \
+  <intake_id> TZ <snapshot_hash>
+```
+
+The Web route proxies the corresponding allowlisted endpoints:
+
+```text
+GET  /api/agent10/hardware
+GET  /api/agent10/hardware/summary
+GET  /api/agent10/hardware/:id
+GET  /api/agent10/hardware/relations
+POST /api/agent10/hardware/drafts
+PATCH /api/agent10/hardware/drafts/:id
+POST /api/agent10/hardware/drafts/:id/reference
+POST /api/agent10/hardware/drafts/:id/attachments
+POST /api/agent10/hardware/drafts/:id/analyze
+GET  /api/agent10/hardware/analysis-jobs/:id
+POST /api/agent10/hardware/drafts/:id/prepare
+POST /api/agent10/hardware/drafts/:id/accept
+```
+
+The `/agent10` page has two route-owned views: `我的硬件` is a read-only
+inventory summary, and `录入 / 编辑` accepts multiple bounded images plus one
+reference input containing an HTTPS URL and optional title/vendor/version
+context. The server fetches the URL only after the explicit action, keeps the
+reference even when it yields no hardware candidate, and requires the sequence
+`识别 → 编辑 → 生成确认包 → 最终验收` before publishing to Obsidian.
+
+Candidate analysis uses the registered `Agent10 / hardware_reference_analysis`
+route only when its runtime is configured. Without the approved provider
+credential, the deterministic upload/reference/draft workflow remains usable
+and the analysis result is explicitly `unavailable`; no alternate provider is
+used.
+
+The accepted hardware namespace is:
+
+```text
+02_Hardware/00_Index/        fixed indexes and templates
+02_Hardware/10_Models/       one model card per stable hardware model
+02_Hardware/20_Units/        Agent/scoped stock and batch cards
+02_Hardware/30_Layouts/      cross-Agent assembly layouts
+02_Hardware/90_Evidence/     copied photos and future vendor evidence
+```
+
+Obsidian remains the human-facing primary record. Agent10's SQLite database is
+a rebuildable query mirror; Web projections omit note bodies, local evidence
+paths, credentials, and device identity fields. A published record is a
+资料快照 acceptance, not proof of installation, connectivity, or physical
+commissioning.
+
 ## Runtime Configuration
 
 Commands that write assets require these environment variables:
