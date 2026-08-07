@@ -38,6 +38,15 @@ Status: Phase 1 is active locally. Agent06 is the sole enabled V1 producer and i
 - Shared Web `:3000` proxies the allowlisted governance route at `/api/agent10/governance`; it never sends the token or Obsidian credential to the browser.
 - Live verification passed for Obsidian HTTPS status, authenticated Agent10 governance, Web governance proxy, explicit `recover-writer` action, and unknown-route rejection.
 
+## 2026-08-07 Hardware Library Production Re-acceptance
+
+- Production Vault `AgentAssetVault` was reopened in Obsidian 1.13.4. Local REST API with MCP 4.1.7 is enabled on `https://127.0.0.1:27124`; the insecure HTTP endpoint remains disabled.
+- The existing ignored runtime configuration and owner-only permissions were preserved. No credential was regenerated or copied into the repository, Web page, or logs.
+- Web `:3000` started Agent10 through its platform supervisor using the declared `agent10` launch spec. The lifecycle state is `available` and the authenticated `agent10-governance` identity probe passes on `127.0.0.1:8010`.
+- Fresh live checks returned authenticated REST `200`, direct Agent10 governance `200`, Web governance `200`, and Web hardware inventory count `24`. Governance reported zero temporary files, stale/active locks, open mirror gaps, promotion records, and schema drift.
+- The live `/agent10` page rendered in Chrome with the hardware inventory, 11 hardware types, 27 available units, the browse/intake tabs, and redacted-detail messaging. No control token or Obsidian REST credential was present in the page projection.
+- This acceptance verifies local software and publication wiring only; it does not prove physical installation, connectivity, or commissioning.
+
 ## 2026-07-11 Approved Decisions
 
 - Repeated idempotent keys reuse the existing asset without updating the note.
@@ -347,15 +356,13 @@ Security hygiene:
   `/tmp/obsidian-local-rest-api.curlrc`.
 - Narrow secret scan found no checked-in bearer token or Local REST API key literal outside the ignored plugin runtime secret.
 
-## Deferred
+## Deferred / Out of Scope
 
 - Real Agent06 RAG ingest adapter.
 - Real Obsidian note frontmatter update store for Knowledge Bridge.
 - Dataview / native view validation.
 - Obsidian Templates visual validation.
-- Wiring `GET /api/asset-library/governance` into the shared local `3000` web service.
-- Running Obsidian Local REST API inside the production Vault and generating its runtime `data.json` through Obsidian trust flow.
-- Shared Web publication of the hardened governance routes.
+- Long-term operational observation and re-acceptance after future Obsidian or Web upgrades.
 - Live Agent06 producer wiring from the Agent06-owned workflow into Agent10.
 - Agent05 is intentionally excluded because it is retired.
 - Mirror-gap retry and real promotion reconciliation remain unavailable until their production draft resolver, note store, and RAG adapter are approved and wired.

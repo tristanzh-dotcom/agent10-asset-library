@@ -257,13 +257,17 @@ class HardwareService:
             for item in items
         ]
         known_items = [item for item in items if item["quantity_total"] is not None]
+        needs_verification_count = sum(_needs_verification(item) for item in items)
         return {
             "items": items,
             "metrics": {
                 "item_count": len(items),
+                "in_stock_model_count": sum(item["quantity_total"] > 0 for item in known_items),
                 "quantity_total": sum(item["quantity_total"] for item in known_items),
                 "quantity_available": sum(item["quantity_available"] for item in known_items),
-                "needs_info_count": sum(item["status"] == "needs_info" for item in items),
+                "needs_verification_count": needs_verification_count,
+                # Keep the old key for consumers that have not adopted the unified label yet.
+                "needs_info_count": needs_verification_count,
             },
         }
 
@@ -313,6 +317,17 @@ def _inventory_projection(item, detail, photos):
         if field in detail:
             projection[field] = detail[field]
     return projection
+
+
+def _needs_verification(item):
+    evidence_levels = {
+        evidence.get("level")
+        for evidence in item.get("evidence_records") or []
+        if isinstance(evidence, dict)
+    }
+    return bool(evidence_levels.intersection({"reported", "label_or_photo", "unverified"})) or not (
+        item.get("last_verified_at") or item.get("last_reviewed_at")
+    )
 
 
 def _record_id(draft):

@@ -6,7 +6,8 @@ from pathlib import Path
 
 from asset_library.hardware_service import HardwareService
 from asset_library.hardware_intake import prepare_hardware_intake
-from tests.test_hardware_schema import valid_model
+from asset_library.hardware_store import HardwareStore
+from tests.test_hardware_schema import valid_model, valid_unit
 
 
 class FakeStore:
@@ -135,6 +136,26 @@ class HardwareServiceTests(unittest.TestCase):
         result = self.service.get_record(record["hardware_model_id"])
 
         self.assertEqual(result["display_name_zh"], "ESP32-S3 开发板")
+
+    def test_inventory_summary_reports_model_stock_and_verification_metrics(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = HardwareStore(Path(tmpdir) / "hardware.sqlite3")
+            model = valid_model()
+            model["hardware_model_id"] = "hwm_metrics"
+            model["last_verified_at"] = None
+            unit = valid_unit()
+            unit["hardware_unit_id"] = "hwu_metrics"
+            unit["model_ref"] = "hwm_metrics"
+            store.upsert_record(model, "02_Hardware/10_Models/Controllers/HWM - metrics.md")
+            store.upsert_record(unit, "02_Hardware/20_Units/agent12/HWU - metrics.md")
+
+            summary = HardwareService(store, self.publisher).list_inventory_summary()
+
+            self.assertEqual(summary["metrics"]["item_count"], 1)
+            self.assertEqual(summary["metrics"]["in_stock_model_count"], 1)
+            self.assertEqual(summary["metrics"]["quantity_available"], 1)
+            self.assertEqual(summary["metrics"]["needs_verification_count"], 1)
+            self.assertEqual(summary["metrics"]["needs_info_count"], 1)
 
     def test_photo_read_is_delegated_without_exposing_internal_reference(self):
         service = HardwareService(self.store, self.publisher, media_service=FakeMediaService())

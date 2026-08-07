@@ -127,7 +127,7 @@ The HTTP migration contract denies access by default. A host must explicitly aut
 
 ## Governance Boundary
 
-`GET /api/asset-library/governance` is read-only. Writer recovery and mirror-gap compaction are explicit, default-denied mutation actions. Mirror retry and promotion reconciliation remain unavailable until their production resolvers are wired. Shared Web wiring and production Obsidian trust activation remain separate publication and operations steps.
+`GET /api/asset-library/governance` is read-only. Writer recovery and mirror-gap compaction are explicit, default-denied mutation actions. Mirror retry and promotion reconciliation remain unavailable until their production resolvers are wired. The production Obsidian trust and shared Web wiring were live-verified on 2026-08-07; Agent10 must remain loopback-only and supervisor-managed.
 
 ## Verification
 
