@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 from .adapters.agent06 import agent06_answer_to_draft
+from .adapters.agent14 import CONTRACT_VERSION as AGENT14_CONTRACT_VERSION
 
 
 DRAFTS_ENDPOINT = "/api/asset-library/drafts"
@@ -36,7 +37,19 @@ class ProducerApiService:
         source_asset_path = payload.get("source_asset_path")
         if not source_asset_path:
             raise ValueError("source_asset_path is required")
+        requested_operation_key = None
+        if producer_id == "agent14":
+            if payload.get("contract_version") != AGENT14_CONTRACT_VERSION:
+                raise ValueError("agent14 contract_version is invalid")
+            requested_operation_key = payload.get("operation_key")
+            if not isinstance(requested_operation_key, str) or not requested_operation_key:
+                raise ValueError("agent14 operation_key is required")
         draft = adapter(Path(source_asset_path))
+        if requested_operation_key is not None:
+            operation_refs = draft.get("source_refs", [])
+            actual_operation_key = operation_refs[0].get("operation_key") if operation_refs and isinstance(operation_refs[0], dict) else None
+            if actual_operation_key != requested_operation_key:
+                raise ValueError("agent14 operation_key does not match snapshot")
         result = self.writer.write(draft)
         response = _write_result(result)
         response["producer_id"] = producer_id
