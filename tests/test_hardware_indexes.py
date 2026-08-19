@@ -1,6 +1,7 @@
 import unittest
 
 from asset_library.hardware_indexes import HardwareIndexPublisher, render_hardware_index_bundle
+from asset_library.hardware_notes import hardware_note_path
 from tests.test_hardware_schema import valid_layout, valid_model, valid_unit
 
 
@@ -26,10 +27,46 @@ class HardwareIndexesTests(unittest.TestCase):
         self.assertIn("可用 / 总数", home)
         self.assertIn("2 / 2", home)
         self.assertIn(
-            "[[02_Hardware/10_Models/Controllers/HWM - ESP32-S3 Development Kit N16R8 - hwm_esp32-s3-dev-kit-n16r8|ESP32-S3 开发板]]",
+            "[ESP32-S3 开发板](<02_Hardware/10_Models/Controllers/HWM - ESP32-S3 Development Kit N16R8 - hwm_esp32-s3-dev-kit-n16r8>)",
             home,
         )
         self.assertIn("2 / 2", inventory)
+
+    def test_index_tables_use_markdown_links_without_wikilink_alias_pipes(self):
+        records = [valid_model(), valid_unit(), valid_layout()]
+
+        bundle = render_hardware_index_bundle(records)
+
+        model_target = "02_Hardware/10_Models/Controllers/HWM - ESP32-S3 Development Kit N16R8 - hwm_esp32-s3-dev-kit-n16r8"
+        model_link = f"[ESP32-S3 开发板](<{model_target}>)"
+        for path in (
+            "02_Hardware/00_Index/Hardware Home.md",
+            "02_Hardware/00_Index/Inventory.md",
+            "02_Hardware/00_Index/Inventory by Scope.md",
+            "02_Hardware/00_Index/Needs Verification.md",
+        ):
+            content = bundle[path]
+            self.assertIn(model_link, content, path)
+            self.assertNotIn(f"[[{model_target}|ESP32-S3 开发板]]", content, path)
+
+        layouts = bundle["02_Hardware/00_Index/Layouts.md"]
+        unit_target = hardware_note_path(valid_unit()).removesuffix(".md")
+        self.assertIn(f"[ESP32-S3 开发板](<{unit_target}>)", layouts)
+
+    def test_home_verification_metric_counts_all_record_types(self):
+        model = valid_model()
+        model["evidence_records"] = [{"level": "official", "claim": "manual", "source_ref": "vendor:manual"}]
+        model["last_verified_at"] = "2026-08-06T12:00:00+08:00"
+        unit = valid_unit()
+        unit["evidence_records"] = [{"level": "unverified", "claim": "quantity", "source_ref": "inventory:pending"}]
+        unit["last_verified_at"] = None
+        layout = valid_layout()
+        layout["evidence_records"] = [{"level": "measured", "claim": "layout", "source_ref": "photo:layout"}]
+        layout["last_reviewed_at"] = "2026-08-06T12:00:00+08:00"
+
+        home = render_hardware_index_bundle([model, unit, layout])["02_Hardware/00_Index/Hardware Home.md"]
+
+        self.assertIn("| 待核验 / 待补资料 | 1 |", home)
 
     def test_index_bundle_lists_zero_inventory_and_needs_verification(self):
         model = valid_model()
@@ -46,7 +83,7 @@ class HardwareIndexesTests(unittest.TestCase):
         bundle = render_hardware_index_bundle([valid_model(), valid_unit(), layout])
 
         self.assertIn("Layouts", bundle["02_Hardware/00_Index/Layouts.md"])
-        self.assertIn("agent12", bundle["02_Hardware/00_Index/Inventory by Scope.md"])
+        self.assertIn("Agent12", bundle["02_Hardware/00_Index/Inventory by Scope.md"])
         self.assertIn("lay_agent12-waterproof-box-v1", bundle["02_Hardware/00_Index/Layouts.md"])
 
     def test_index_bundle_has_fixed_plugin_free_paths(self):

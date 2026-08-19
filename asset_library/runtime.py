@@ -16,6 +16,8 @@ from .hardware_service import HardwareService
 from .hardware_store import HardwareStore
 from .locking import VaultWriteLock
 from .obsidian_rest import ObsidianRestClient
+from .adapters.agent06 import agent06_answer_to_draft
+from .adapters.agent14 import agent14_snapshot_to_draft
 from .producer_api import ProducerApiService
 from .sqlite_mirror import MirrorGapJournal, SQLiteAssetMirror
 from .writer import RestFirstAssetWriter
@@ -114,7 +116,21 @@ def build_runtime(env=None, config_path=None):
         analysis_engine=hardware_analysis_engine,
         media_service=hardware_media_service,
     )
-    producer_service = ProducerApiService(writer=writer)
+    producer_adapters = {"agent06": agent06_answer_to_draft}
+    producer_agent_ids = {"agent06", "codex"}
+    agent14_snapshot_root = str(env.get("AGENT14_SNAPSHOT_ROOT", "")).strip()
+    if agent14_snapshot_root:
+        snapshot_root = Path(agent14_snapshot_root).resolve()
+        producer_adapters["agent14"] = lambda path, root=snapshot_root: agent14_snapshot_to_draft(
+            path,
+            snapshot_root=root,
+        )
+        producer_agent_ids.add("agent14")
+    producer_service = ProducerApiService(
+        writer=writer,
+        adapters=producer_adapters,
+        allowed_agent_ids=producer_agent_ids,
+    )
     governance_service = GovernanceService(
         vault_path=vault_path,
         mirror=mirror,

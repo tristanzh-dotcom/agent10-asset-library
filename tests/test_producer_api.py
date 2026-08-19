@@ -3,7 +3,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from asset_library.adapters.agent14 import agent14_snapshot_to_draft
 from asset_library.producer_api import ProducerApiService, producer_response
+from tests.test_agent14_adapter import build_snapshot
 
 
 class FakeWriter:
@@ -89,6 +91,64 @@ class ProducerApiTests(unittest.TestCase):
             self.assertEqual(json.loads(body)["producer_id"], "agent06")
             self.assertEqual(writer.drafts[0]["agent_id"], "agent06")
             self.assertEqual(writer.drafts[0]["asset_type"], "agent06_pka_answer")
+
+    def test_agent14_producer_requires_explicit_snapshot_root_and_maps_normal_draft(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            snapshot_dir, snapshot_root = build_snapshot(Path(tmpdir))
+            manifest = json.loads((snapshot_dir / "archive-manifest.json").read_text(encoding="utf-8"))
+            writer = FakeWriter()
+            service = ProducerApiService(
+                writer=writer,
+                adapters={
+                    "agent14": lambda path: agent14_snapshot_to_draft(path, snapshot_root=snapshot_root),
+                },
+                allowed_agent_ids={"agent14"},
+            )
+
+            status, _headers, body = producer_response(
+                "POST",
+                "/api/asset-library/producers/agent14/assets",
+                json.dumps(
+                    {
+                        "contract_version": "agent14-archive:v1",
+                        "operation_key": manifest["operationKey"],
+                        "source_asset_path": str(snapshot_dir),
+                    }
+                ),
+                service,
+            )
+
+            self.assertEqual(status, 201)
+            self.assertEqual(json.loads(body)["producer_id"], "agent14")
+            self.assertEqual(writer.drafts[0]["agent_id"], "agent14")
+            self.assertNotIn("asset_id", writer.drafts[0])
+
+    def test_agent14_producer_rejects_contract_or_operation_mismatch(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            snapshot_dir, snapshot_root = build_snapshot(Path(tmpdir))
+            manifest = json.loads((snapshot_dir / "archive-manifest.json").read_text(encoding="utf-8"))
+            writer = FakeWriter()
+            service = ProducerApiService(
+                writer=writer,
+                adapters={"agent14": lambda path: agent14_snapshot_to_draft(path, snapshot_root=snapshot_root)},
+                allowed_agent_ids={"agent14"},
+            )
+
+            for payload in (
+                {"contract_version": "agent14-archive:v2", "operation_key": manifest["operationKey"]},
+                {"contract_version": "agent14-archive:v1", "operation_key": "agent14:doc-demo:r1:sha256:" + "b" * 64},
+            ):
+                payload["source_asset_path"] = str(snapshot_dir)
+                status, _headers, body = producer_response(
+                    "POST",
+                    "/api/asset-library/producers/agent14/assets",
+                    json.dumps(payload),
+                    service,
+                )
+                self.assertEqual(status, 400)
+                self.assertEqual(json.loads(body)["error"], "bad_request")
+
+            self.assertEqual(writer.drafts, [])
 
     def test_unknown_producer_returns_404(self):
         status, _headers, body = producer_response(

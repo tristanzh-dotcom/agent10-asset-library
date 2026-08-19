@@ -6,8 +6,9 @@ from datetime import datetime, timezone
 from .hardware_notes import (
     _category_label,
     _display_name,
+    _human_scope,
+    _human_text,
     _scope_label,
-    _status_label,
     hardware_note_path,
 )
 from .hardware_store import record_id_for
@@ -33,14 +34,15 @@ class HardwareIndexPublishResult:
 
 def render_hardware_index_bundle(records, generated_at=None):
     records = [dict(record) for record in records if isinstance(record, dict)]
+    records_by_id = {record_id_for(record): record for record in records}
     models = sorted(
         (record for record in records if record.get("record_type") == "hardware_model"),
-        key=lambda record: (_record_label(record).lower(), record_id_for(record)),
+        key=lambda record: (_record_label(record, records_by_id).lower(), record_id_for(record)),
     )
     units = [record for record in records if record.get("record_type") == "hardware_unit"]
     layouts = sorted(
         (record for record in records if record.get("record_type") == "assembly_layout"),
-        key=lambda record: (_record_label(record).lower(), record_id_for(record)),
+        key=lambda record: (_record_label(record, records_by_id).lower(), record_id_for(record)),
     )
     units_by_model = _group_units(units)
     paths = {record_id_for(record): _note_link_path(record) for record in records}
@@ -50,12 +52,12 @@ def render_hardware_index_bundle(records, generated_at=None):
         for model in models
     }
     return {
-        INDEX_PATHS[0]: _render_home(models, summaries, paths, generated),
-        INDEX_PATHS[1]: _render_inventory(models, summaries, paths, generated),
-        INDEX_PATHS[2]: _render_models_by_category(models, paths, generated),
-        INDEX_PATHS[3]: _render_inventory_by_scope(models, units, summaries, paths, generated),
-        INDEX_PATHS[4]: _render_layouts(layouts, paths, generated),
-        INDEX_PATHS[5]: _render_needs_verification(records, paths, generated),
+        INDEX_PATHS[0]: _render_home(models, summaries, paths, generated, records),
+        INDEX_PATHS[1]: _render_inventory(models, summaries, paths, generated, records_by_id),
+        INDEX_PATHS[2]: _render_models_by_category(models, paths, generated, records_by_id),
+        INDEX_PATHS[3]: _render_inventory_by_scope(models, units, summaries, paths, generated, records_by_id),
+        INDEX_PATHS[4]: _render_layouts(layouts, paths, generated, records_by_id),
+        INDEX_PATHS[5]: _render_needs_verification(records, paths, generated, records_by_id),
     }
 
 
@@ -111,10 +113,10 @@ def _inventory_summary(model, units):
     return {"total": total, "available": available, "status": status}
 
 
-def _render_home(models, summaries, paths, generated):
+def _render_home(models, summaries, paths, generated, records):
     available_models = sum(1 for model in models if summaries[record_id_for(model)]["available"])
     available_total = sum(summaries[record_id_for(model)]["available"] for model in models)
-    needs = sum(1 for model in models if _needs_verification(model))
+    needs = sum(1 for record in records if _needs_verification(record))
     lines = [
         "---",
         "record_type: hardware_index",
@@ -148,7 +150,7 @@ def _render_home(models, summaries, paths, generated):
     return _finish(lines)
 
 
-def _render_inventory(models, summaries, paths, generated):
+def _render_inventory(models, summaries, paths, generated, records_by_id):
     lines = [
         "---",
         "record_type: hardware_index",
@@ -166,7 +168,7 @@ def _render_inventory(models, summaries, paths, generated):
     ]
     for model in models:
         summary = summaries[record_id_for(model)]
-        label = _record_label(model)
+        label = _record_label(model, records_by_id)
         link = _record_link(model, label, paths)
         brand_model = " / ".join(filter(None, [model.get("manufacturer"), model.get("model_or_sku")])) or "未提供"
         lines.append(f"| {link} | {brand_model} | {summary['available']} / {summary['total']} | {summary['status']} |")
@@ -175,7 +177,7 @@ def _render_inventory(models, summaries, paths, generated):
     return _finish(lines)
 
 
-def _render_models_by_category(models, paths, generated):
+def _render_models_by_category(models, paths, generated, records_by_id):
     grouped = {}
     for model in models:
         grouped.setdefault(_category_label(model.get("category")), []).append(model)
@@ -183,14 +185,14 @@ def _render_models_by_category(models, paths, generated):
     for category in sorted(grouped):
         lines.extend([f"## {category}", ""])
         for model in grouped[category]:
-            lines.append(f"- {_record_link(model, _record_label(model), paths)}")
+            lines.append(f"- {_record_link(model, _record_label(model, records_by_id), paths)}")
         lines.append("")
     if not grouped:
         lines.append("暂无型号记录。")
     return _finish(lines)
 
 
-def _render_inventory_by_scope(models, units, summaries, paths, generated):
+def _render_inventory_by_scope(models, units, summaries, paths, generated, records_by_id):
     model_by_id = {record_id_for(model): model for model in models}
     grouped = {}
     for unit in units:
@@ -201,25 +203,25 @@ def _render_inventory_by_scope(models, units, summaries, paths, generated):
         grouped.setdefault(scope, {}).setdefault(unit["model_ref"], []).append(unit)
     lines = ["---", "record_type: hardware_index", "index_kind: inventory_by_scope", "namespace: 02_Hardware", f'generated_at: "{generated}"', "---", "", "# Inventory by Scope", ""]
     for scope in sorted(grouped):
-        lines.extend([f"## {scope}", "", "| 名称 | 可用 / 总数 |", "| --- | ---: |"])
-        for model_id, scoped_units in sorted(grouped[scope].items(), key=lambda item: _record_label(model_by_id[item[0]]).lower()):
+        lines.extend([f"## {_human_scope(scope)}", "", "| 名称 | 可用 / 总数 |", "| --- | ---: |"])
+        for model_id, scoped_units in sorted(grouped[scope].items(), key=lambda item: _record_label(model_by_id[item[0]], records_by_id).lower()):
             model = model_by_id[model_id]
             summary = _inventory_summary(model, scoped_units)
-            lines.append(f"| {_record_link(model, _record_label(model), paths)} | {summary['available']} / {summary['total']} |")
+            lines.append(f"| {_record_link(model, _record_label(model, records_by_id), paths)} | {summary['available']} / {summary['total']} |")
         lines.append("")
     if not grouped:
         lines.append("暂无库存范围记录。")
     return _finish(lines)
 
 
-def _render_layouts(layouts, paths, generated):
+def _render_layouts(layouts, paths, generated, records_by_id):
     lines = ["---", "record_type: hardware_index", "index_kind: layouts", "namespace: 02_Hardware", f'generated_at: "{generated}"', "---", "", "# Layouts", ""]
     for layout in layouts:
-        lines.append(f"## {_record_link(layout, _record_label(layout), paths)}")
+        lines.append(f"## {_record_link(layout, _record_label(layout, records_by_id), paths)}")
         lines.append("")
         members = layout.get("member_refs") or []
         if members:
-            lines.append("成员：" + "、".join(_related_record_link(ref, paths) for ref in members))
+            lines.append("成员：" + "、".join(_related_record_link(ref, paths, records_by_id) for ref in members))
         else:
             lines.append("成员：暂无")
         lines.append("")
@@ -228,15 +230,15 @@ def _render_layouts(layouts, paths, generated):
     return _finish(lines)
 
 
-def _render_needs_verification(records, paths, generated):
+def _render_needs_verification(records, paths, generated, records_by_id):
     lines = ["---", "record_type: hardware_index", "index_kind: needs_verification", "namespace: 02_Hardware", f'generated_at: "{generated}"', "---", "", "# Needs Verification", "", "| 记录 | 类型 | 原因 |", "| --- | --- | --- |"]
     found = False
-    for record in sorted(records, key=lambda item: (_record_label(item).lower(), record_id_for(item))):
+    for record in sorted(records, key=lambda item: (_record_label(item, records_by_id).lower(), record_id_for(item))):
         if not _needs_verification(record):
             continue
         found = True
         reason = "缺少独立核验时间或证据等级仍为候选"
-        lines.append(f"| {_record_link(record, _record_label(record), paths)} | {_record_type_label(record)} | {reason} |")
+        lines.append(f"| {_record_link(record, _record_label(record, records_by_id), paths)} | {_record_type_label(record)} | {reason} |")
     if not found:
         lines.append("| 暂无 | - | 当前没有待核验记录 |")
     return _finish(lines)
@@ -253,7 +255,7 @@ def _usage(record):
         for key in ("project_role", "use", "placement", "layout"):
             value = source.get(key)
             if isinstance(value, str) and value.strip():
-                return value.strip()
+                return _human_text(value.strip())
     return "待补用途"
 
 
@@ -264,12 +266,15 @@ def _needs_verification(record):
     return not (record.get("last_verified_at") or record.get("last_reviewed_at"))
 
 
-def _record_label(record):
+def _record_label(record, records_by_id=None):
+    if not record:
+        return "关联记录"
     if record.get("record_type") == "assembly_layout":
-        return record.get("display_name") or record.get("title") or record_id_for(record)
+        return _display_name(record)
     if record.get("record_type") == "hardware_unit":
         model_ref = record.get("model_ref")
-        return localized_model_label(model_ref) or record.get("display_name") or record.get("canonical_name") or record_id_for(record)
+        model = (records_by_id or {}).get(model_ref) if isinstance(records_by_id, dict) else None
+        return _display_name(model) if model else localized_model_label(model_ref) or record.get("display_name") or record.get("canonical_name") or record_id_for(record)
     return _display_name(record)
 
 
@@ -284,12 +289,14 @@ def localized_model_label(model_ref):
 def _record_link(record, label, paths):
     record_id = record_id_for(record)
     path = paths.get(record_id) or _note_link_path(record)
-    return f"[[{path}|{label}]]"
+    return f"[{label}](<{path}>)"
 
 
-def _related_record_link(record_id, paths):
+def _related_record_link(record_id, paths, records_by_id=None):
     path = paths.get(record_id)
-    return f"[[{path}|{record_id}]]" if path else f"`{record_id}`"
+    related = (records_by_id or {}).get(record_id)
+    label = _record_label(related, records_by_id) if related else record_id
+    return f"[{label}](<{path}>)" if path else label
 
 
 def _note_link_path(record):

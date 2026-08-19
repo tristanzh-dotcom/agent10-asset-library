@@ -63,6 +63,22 @@ class RuntimeTests(unittest.TestCase):
             self.assertIsNotNone(runtime.hardware_service)
             self.assertIsNotNone(runtime.hardware_service.media_service)
 
+    def test_build_runtime_opts_agent14_adapter_only_with_explicit_snapshot_root(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            snapshot_root = Path(tmpdir) / "agent14" / "projects" / "doc-demo" / "archive" / "snapshots"
+            snapshot_root.mkdir(parents=True)
+            runtime = build_runtime(
+                env={
+                    "AGENT_ASSET_VAULT_PATH": str(Path(tmpdir) / "vault"),
+                    "OBSIDIAN_REST_API_KEY": "secret",
+                    "OBSIDIAN_REST_BASE_URL": "https://127.0.0.1:27124",
+                    "AGENT14_SNAPSHOT_ROOT": str(snapshot_root),
+                }
+            )
+
+            self.assertEqual(set(runtime.producer_service.adapters), {"agent06", "agent14"})
+            self.assertIn("agent14", runtime.producer_service.allowed_agent_ids)
+
     def test_recovery_is_explicit_and_not_run_during_runtime_construction(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             vault = Path(tmpdir) / "vault"

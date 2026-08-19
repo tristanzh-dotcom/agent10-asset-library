@@ -44,7 +44,7 @@ immutable intake snapshot.
 
 - [[Models by Category]]
 - [[Inventory by Scope]]
-- [[Assembly Layouts]]
+- [[Layouts]]
 - [[Needs Verification]]
 
 Unknown values remain `null` or `unverified`. A published hardware record does
@@ -75,15 +75,17 @@ reserved, in-use, planned, and retired stock. They do not contain device IDs,
 MAC addresses, credentials, or runtime configuration.
 """,
     "02_Hardware/00_Index/Assembly Layouts.md": """---
-record_type: hardware_index
+record_type: hardware_compatibility
 index_kind: assembly_layouts
 namespace: 02_Hardware
+compatibility_for: 02_Hardware/00_Index/Layouts.md
 ---
 
 # Assembly Layouts
 
-Layout records capture members, measured constraints, assumptions, and open
-questions. They are not installation or commissioning acceptance records.
+这是旧版布局索引的兼容入口。当前布局索引已迁移到 [[Layouts]]。
+
+请从 [[Hardware Home]] 或 [[Layouts]] 浏览当前装配布局；本页不再单独维护。
 """,
     "02_Hardware/00_Index/Needs Verification.md": """---
 record_type: hardware_index

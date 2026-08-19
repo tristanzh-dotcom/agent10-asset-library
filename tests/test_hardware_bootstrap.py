@@ -32,6 +32,16 @@ class FakeFallback:
 
 
 class HardwareBootstrapTests(unittest.TestCase):
+    def test_bootstrap_home_uses_current_layout_index_and_legacy_page_is_a_compatibility_entry(self):
+        home = HARDWARE_NOTES["02_Hardware/00_Index/Hardware Home.md"]
+        legacy = HARDWARE_NOTES["02_Hardware/00_Index/Assembly Layouts.md"]
+
+        self.assertIn("- [[Layouts]]", home)
+        self.assertNotIn("[[Assembly Layouts]]", home)
+        self.assertIn("record_type: hardware_compatibility", legacy)
+        self.assertIn("[[Layouts]]", legacy)
+        self.assertIn("不再单独维护", legacy)
+
     def test_bootstrap_creates_namespace_and_reuses_existing_notes(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             rest = FakeRest()
