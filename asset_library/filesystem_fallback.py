@@ -1,5 +1,6 @@
 import os
 import secrets
+import stat
 from pathlib import Path
 
 from .locking import VaultWriteLock
@@ -29,12 +30,18 @@ class DirectFilesystemFallbackWriter:
             tmp = target.with_name(f".{target.name}.{secrets.token_hex(4)}.tmp")
             data = markdown.encode("utf-8")
 
-            with open(tmp, "wb") as handle:
-                handle.write(data)
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(tmp, target)
-            _fsync_directory(target.parent)
+            mode = stat.S_IMODE(target.stat().st_mode) & 0o600 if target.exists() else 0o600
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, mode)
+            try:
+                with os.fdopen(fd, "wb") as handle:
+                    os.fchmod(handle.fileno(), mode)
+                    handle.write(data)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                os.replace(tmp, target)
+                _fsync_directory(target.parent)
+            finally:
+                tmp.unlink(missing_ok=True)
 
     def _resolve_target(self, path):
         target = (self.vault_path / path).resolve()

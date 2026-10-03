@@ -3,6 +3,8 @@ import hmac
 import json
 import os
 import secrets
+import socket
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -14,6 +16,8 @@ from .runtime import build_runtime
 
 
 API_PREFIX = "/api/agent10"
+MAX_REQUEST_BYTES = 20 * 1024 * 1024  # One bounded 12 MiB image, base64 plus JSON.
+REQUEST_TIMEOUT_SECONDS = 10
 
 
 class Agent10HttpApp:
@@ -21,11 +25,22 @@ class Agent10HttpApp:
         self.runtime = runtime
         self.control_token = control_token
 
-    def dispatch(self, method, path, headers, body, client_host):
+    def authorize(self, headers, client_host):
         if not _is_loopback(client_host):
             return _json_response(403, {"error": "loopback_required"})
         if not _has_control_token(headers, self.control_token):
             return _json_response(403, {"error": "control_authorization_required"})
+
+    def dispatch(self, method, path, headers, body, client_host):
+        denied = self.authorize(headers, client_host)
+        if denied:
+            return denied
+        if len(body) > MAX_REQUEST_BYTES:
+            return _json_response(413, {"error": "request_too_large"})
+        try:
+            text_body = body.decode("utf-8")
+        except UnicodeDecodeError:
+            return _json_response(400, {"error": "invalid_utf8"})
         parsed = urlsplit(path)
         route_path = parsed.path
         if not route_path.startswith(API_PREFIX):
@@ -53,7 +68,7 @@ class Agent10HttpApp:
         status, response_headers, text = producer_response(
             method,
             asset_path,
-            body.decode("utf-8"),
+            text_body,
             self.runtime.producer_service,
             migration_authorized=False,
         )
@@ -84,6 +99,10 @@ def create_http_server(runtime, control_token, host="127.0.0.1", port=8010):
     app = Agent10HttpApp(runtime, control_token)
 
     class Handler(BaseHTTPRequestHandler):
+        def setup(self):
+            self.request.settimeout(REQUEST_TIMEOUT_SECONDS)
+            super().setup()
+
         def do_GET(self):
             self._dispatch()
 
@@ -100,18 +119,45 @@ def create_http_server(runtime, control_token, host="127.0.0.1", port=8010):
             self._dispatch()
 
         def _dispatch(self):
-            length = int(self.headers.get("content-length", "0"))
-            body = self.rfile.read(length) if length else b""
-            status, headers, response_body = app.dispatch(
-                self.command,
-                self.path,
-                {key.lower(): value for key, value in self.headers.items()},
-                body,
-                self.client_address[0],
-            )
+            headers = {key.lower(): value for key, value in self.headers.items()}
+            response = app.authorize(headers, self.client_address[0])
+            if response is None:
+                lengths = self.headers.get_all("content-length", [])
+                raw_length = lengths[0] if lengths else "0"
+                if len(lengths) > 1 or not raw_length.isascii() or not raw_length.isdigit() or "transfer-encoding" in headers:
+                    response = _json_response(400, {"error": "invalid_content_length"})
+                elif len(raw_length) > 10 or int(raw_length) > MAX_REQUEST_BYTES:
+                    response = _json_response(413, {"error": "request_too_large"})
+                else:
+                    try:
+                        length = int(raw_length)
+                        deadline = time.monotonic() + REQUEST_TIMEOUT_SECONDS
+                        chunks, remaining = [], length
+                        while remaining:
+                            timeout = deadline - time.monotonic()
+                            if timeout <= 0:
+                                raise TimeoutError("body deadline exceeded")
+                            self.connection.settimeout(timeout)
+                            chunk = self.rfile.read1(min(remaining, 65536))
+                            if not chunk:
+                                break
+                            chunks.append(chunk)
+                            remaining -= len(chunk)
+                        body = b"".join(chunks)
+                        response = (_json_response(400, {"error": "incomplete_body"}) if len(body) != length
+                                    else app.dispatch(self.command, self.path, headers, body, self.client_address[0]))
+                    except (socket.timeout, TimeoutError):
+                        response = _json_response(408, {"error": "request_timeout"})
+                    except Exception:
+                        response = _json_response(500, {"error": "internal_error"})
+            self._send_response(response)
+
+        def _send_response(self, response):
+            status, headers, response_body = response
             self.send_response(status)
             for key, value in headers.items():
                 self.send_header(key, value)
+            self.send_header("Content-Length", str(len(response_body)))
             self.end_headers()
             if response_body:
                 self.wfile.write(response_body)
@@ -136,7 +182,7 @@ def main(argv=None):
 
 def _has_control_token(headers, expected):
     supplied = headers.get("authorization", "")
-    return hmac.compare_digest(supplied, f"Bearer {expected}")
+    return hmac.compare_digest(supplied.encode("utf-8"), f"Bearer {expected}".encode("utf-8"))
 
 
 def _is_control_token(value):

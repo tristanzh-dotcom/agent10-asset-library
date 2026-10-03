@@ -217,7 +217,7 @@ class ProducerApiTests(unittest.TestCase):
         )
 
         self.assertEqual(status, 400)
-        self.assertEqual(json.loads(body)["message"], "producer agent_id is not enabled for V1: agent10")
+        self.assertEqual(json.loads(body)["message"], "producer agent_id is not enabled for V1")
         self.assertEqual(writer.drafts, [])
 
 

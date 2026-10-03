@@ -8,6 +8,7 @@ from asset_library.hardware_service import HardwareService
 from asset_library.hardware_intake import prepare_hardware_intake
 from asset_library.hardware_store import HardwareStore
 from tests.test_hardware_schema import valid_model, valid_unit
+from tests.test_hardware_attachments import valid_png
 
 
 class FakeStore:
@@ -207,7 +208,7 @@ class HardwareServiceTests(unittest.TestCase):
                 operator_id="server-operator",
             )
             draft = service.create_draft(draft_id_factory=lambda: "hwd_photo")
-            payload = b"\x89PNG\r\n\x1a\n" + b"safe"
+            payload = valid_png()
 
             result = service.attach_draft(
                 draft["draft_id"],

@@ -4,9 +4,10 @@ import hashlib
 import ipaddress
 import re
 import socket
+from http.client import HTTPSConnection
 from datetime import datetime, timezone
 from urllib.parse import urljoin, urlsplit, urlunsplit
-from urllib.request import HTTPRedirectHandler, Request, build_opener
+from urllib.request import HTTPRedirectHandler, HTTPSHandler, ProxyHandler, Request, build_opener
 
 MAX_REFERENCE_BYTES = 512 * 1024
 MAX_REFERENCE_TEXT_CHARS = 120000
@@ -19,7 +20,7 @@ def validate_reference_url(raw_url):
     if not isinstance(raw_url, str) or not raw_url.strip():
         raise ValueError("reference URL is required")
     parsed = urlsplit(raw_url.strip())
-    if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
+    if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password or parsed.port not in {None, 443}:
         raise ValueError("reference URL must be public HTTPS without credentials")
     host = parsed.hostname.lower().rstrip(".")
     if host in {"localhost", "ip6-localhost"}:
@@ -28,9 +29,9 @@ def validate_reference_url(raw_url):
         address = ipaddress.ip_address(host)
     except ValueError:
         address = None
-    if address and (address.is_private or address.is_loopback or address.is_link_local or address.is_reserved or address.is_multicast):
+    if address and (not address.is_global or address.is_multicast or address.is_reserved):
         raise ValueError("reference URL must not target a private address")
-    return urlunsplit(("https", host, parsed.path or "/", parsed.query, ""))
+    return urlunsplit(("https", f"[{host}]" if ":" in host else host, parsed.path or "/", parsed.query, ""))
 
 
 def parse_reference_input(value):
@@ -78,8 +79,8 @@ def fetch_reference(raw_url, opener=None, resolve_host=None):
 
     canonical = validate_reference_url(raw_url)
     resolver = resolve_host or _resolve_host
-    _assert_public_host(canonical, resolver)
-    active_opener = opener or build_opener(_SafeRedirectHandler(resolver))
+    addresses = _assert_public_host(canonical, resolver)
+    active_opener = opener or build_opener(ProxyHandler({}), _SafeRedirectHandler(resolver), _PinnedHTTPSHandler(resolver))
     request = Request(
         canonical,
         headers={
@@ -88,9 +89,12 @@ def fetch_reference(raw_url, opener=None, resolve_host=None):
         },
         method="GET",
     )
-    with active_opener(request, timeout=REFERENCE_FETCH_TIMEOUT_SECONDS) as response:
+    request._agent10_addresses = addresses
+    open_request = getattr(active_opener, "open", active_opener)
+    with open_request(request, timeout=REFERENCE_FETCH_TIMEOUT_SECONDS) as response:
         final_url = validate_reference_url(response.geturl() or canonical)
-        _assert_public_host(final_url, resolver)
+        if final_url != canonical:
+            _assert_public_host(final_url, resolver)
         body = response.read(MAX_REFERENCE_BYTES + 1)
         if len(body) > MAX_REFERENCE_BYTES:
             raise ValueError("reference response exceeds the size limit")
@@ -112,11 +116,49 @@ class _SafeRedirectHandler(HTTPRedirectHandler):
             raise ValueError("reference URL exceeded the redirect limit")
         target = urljoin(req.full_url, newurl)
         canonical = validate_reference_url(target)
-        _assert_public_host(canonical, self.resolve_host)
+        addresses = _assert_public_host(canonical, self.resolve_host)
         redirected = super().redirect_request(req, fp, code, msg, headers, canonical)
         if redirected is not None:
             redirected._agent10_redirect_count = redirect_count + 1
+            redirected._agent10_addresses = addresses
         return redirected
+
+
+class _PinnedHTTPSConnection(HTTPSConnection):
+    """Connect only to a validated numeric address, retaining TLS identity."""
+
+    def __init__(self, host, addresses, **kwargs):
+        super().__init__(host, **kwargs)
+        self.addresses = addresses
+
+    def connect(self):
+        if self._tunnel_host:
+            raise ValueError("reference proxy tunnels are not allowed")
+        last_error = None
+        for address in self.addresses:
+            sock = None
+            try:
+                sock = socket.create_connection((address, self.port), self.timeout, self.source_address)
+                self.sock = self._context.wrap_socket(sock, server_hostname=self.host)
+                return
+            except OSError as exc:
+                last_error = exc
+                if sock is not None:
+                    sock.close()
+        if last_error is not None:
+            raise last_error
+        raise ValueError("reference host has no validated address")
+
+
+class _PinnedHTTPSHandler(HTTPSHandler):
+    def __init__(self, resolver):
+        super().__init__()
+        self.resolver = resolver
+
+    def https_open(self, request):
+        canonical = validate_reference_url(request.full_url)
+        addresses = getattr(request, "_agent10_addresses", None) or _assert_public_host(canonical, self.resolver)
+        return self.do_open(lambda host, **kwargs: _PinnedHTTPSConnection(host, addresses, **kwargs), request)
 
 
 def _response_content_type(response):
@@ -138,20 +180,21 @@ def _assert_public_host(url, resolver):
     host = urlsplit(url).hostname
     if not host:
         raise ValueError("reference URL must have a hostname")
-    for value in resolver(host):
+    values = resolver(host)
+    if not values:
+        raise ValueError("reference host has no public addresses")
+    addresses = []
+    for value in values:
         try:
             address = ipaddress.ip_address(value)
-        except ValueError:
-            continue
-        if (
-            address.is_private
-            or address.is_loopback
-            or address.is_link_local
-            or address.is_reserved
-            or address.is_multicast
-            or address.is_unspecified
-        ):
+        except (ValueError, TypeError) as exc:
+            raise ValueError("reference host returned an invalid address") from exc
+        if not address.is_global or address.is_multicast or address.is_reserved:
             raise ValueError("reference URL must not resolve to a private address")
+        addresses.append(str(address))
+    if not addresses:
+        raise ValueError("reference host has no public addresses")
+    return tuple(dict.fromkeys(addresses))
 
 
 def _sha(value):

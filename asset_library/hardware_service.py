@@ -1,5 +1,6 @@
 import re
 import hashlib
+from contextlib import nullcontext
 from pathlib import Path
 from uuid import uuid4
 
@@ -48,17 +49,42 @@ class HardwareService:
         return response
 
     def accept(self, intake_id, accepted_by, expected_snapshot_hash):
+        factory = getattr(self.publisher, "operation_lock_factory", None)
+        lock = factory(f"hardware-accept:{intake_id}") if factory else nullcontext()
+        with lock:
+            return self._accept_locked(intake_id, accepted_by, expected_snapshot_hash)
+
+    def _accept_locked(self, intake_id, accepted_by, expected_snapshot_hash):
         intake = self.store.get_intake(intake_id)
         if intake is None:
             raise ValueError("hardware intake not found")
+        status = intake.get("intake_status")
+        if status not in {"review_pending", "accepted", "published"}:
+            raise ValueError("hardware intake cannot be accepted in its current state")
+        checked = {key: value for key, value in intake.items() if key != "publication"}
+        checked["intake_status"] = "review_pending"
         accepted = accept_hardware_intake(
-            intake,
+            checked,
             accepted_by,
             expected_snapshot_hash,
             accepted_at=self.clock() if self.clock else None,
         )
-        self.store.update_intake(accepted)
-        publication = self.publisher.publish(accepted)
+        if status in {"accepted", "published"}:
+            if (intake.get("acceptance") or {}).get("snapshot_hash") != expected_snapshot_hash:
+                raise ValueError("hardware acceptance snapshot changed")
+            accepted = intake
+            if status == "published":
+                publication = dict(intake.get("publication") or {})
+                publication.pop("stages", None)
+                if publication.get("status") != "published":
+                    raise ValueError("hardware publication receipt is unavailable")
+                return publication
+            stages = accepted.setdefault("publication", {}).setdefault("stages", {})
+            stages.setdefault("primary", {"status": "unknown"})
+        else:
+            self.store.update_intake(accepted)
+        publish = getattr(self.publisher, "publish_locked", self.publisher.publish)
+        publication = publish(accepted)
         response = {
             "status": publication.status,
             "record_id": publication.record_id,
@@ -68,10 +94,10 @@ class HardwareService:
         }
         if publication.status == "published":
             accepted["intake_status"] = "published"
-            accepted["publication"] = response
-            self.store.update_intake(accepted)
         else:
             response["intake_status"] = "accepted"
+        accepted["publication"] = {"stages": (accepted.get("publication") or {}).get("stages", {}), **response}
+        self.store.update_intake(accepted)
         return response
 
     def create_draft(self, base_record_id=None, draft_id_factory=None):
@@ -123,7 +149,7 @@ class HardwareService:
         records = compile_draft_to_records(
             draft,
             model_id_factory=lambda value: _model_id(value["display_name"]),
-            unit_id_factory=lambda value, model_id: _unit_id(model_id, value["revision"]),
+            unit_id_factory=lambda value, model_id: _unit_id(model_id, value["revision"], value["draft_id"]),
         )
         intakes = []
         if records["model"] is not None:
@@ -148,12 +174,12 @@ class HardwareService:
     def accept_draft(self, draft_id, expected_bundle_hash, accepted_by=None):
         draft = self.store.get_draft(draft_id)
         bundle = (draft or {}).get("bundle") or {}
-        if draft and draft.get("status") in {"published", "partial"}:
-            return {"status": draft["status"], "draft_id": draft_id, "results": list(draft.get("publication") or [])}
-        if not draft or draft.get("status") != "prepared":
+        if not draft or draft.get("status") not in {"prepared", "partial", "published"}:
             raise ValueError("hardware draft is not prepared")
         if bundle.get("bundle_hash") != expected_bundle_hash:
             raise ValueError("hardware confirmation bundle changed")
+        if draft.get("status") == "published":
+            return {"status": "published", "draft_id": draft_id, "results": list(draft.get("publication") or [])}
         results = []
         for item in bundle.get("intakes", []):
             try:
@@ -345,8 +371,8 @@ def _model_id(display_name):
     return f"hwm_{_slug(display_name)}"
 
 
-def _unit_id(model_id, revision):
-    return f"hwu_shared-{model_id.removeprefix('hwm_')}-batch-{revision}"
+def _unit_id(model_id, revision, draft_id):
+    return f"hwu_shared-{model_id.removeprefix('hwm_')}-batch-{draft_id.removeprefix('hwd_')}-r{revision}"
 
 
 def _slug(value):

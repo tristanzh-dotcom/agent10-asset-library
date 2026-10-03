@@ -2,6 +2,7 @@ import json
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
+from .sqlite_mirror import _connect_private, _connect_readonly
 
 
 class HardwareStore:
@@ -12,8 +13,7 @@ class HardwareStore:
 
     def save_intake(self, intake):
         payload = _dump(intake)
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(self.db_path) as conn:
+        with _connect_private(self.db_path) as conn:
             _ensure_schema(conn)
             existing = conn.execute(
                 "select payload_json, snapshot_hash from hardware_intakes where operation_key = ?",
@@ -46,8 +46,9 @@ class HardwareStore:
     def get_intake(self, intake_id):
         if not self.db_path.exists():
             return None
-        with sqlite3.connect(self.db_path) as conn:
-            _ensure_schema(conn)
+        with _connect_readonly(self.db_path) as conn:
+            if not _has_table(conn, "hardware_intakes"):
+                return None
             row = conn.execute(
                 "select payload_json from hardware_intakes where intake_id = ?",
                 (intake_id,),
@@ -55,8 +56,7 @@ class HardwareStore:
         return json.loads(row[0]) if row else None
 
     def update_intake(self, intake):
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(self.db_path) as conn:
+        with _connect_private(self.db_path) as conn:
             _ensure_schema(conn)
             changed = conn.execute(
                 """
@@ -73,15 +73,36 @@ class HardwareStore:
     def count_intakes(self):
         if not self.db_path.exists():
             return 0
-        with sqlite3.connect(self.db_path) as conn:
-            _ensure_schema(conn)
+        with _connect_readonly(self.db_path) as conn:
+            if not _has_table(conn, "hardware_intakes"):
+                return 0
             return conn.execute("select count(*) from hardware_intakes").fetchone()[0]
+
+    def same_record_primary_intents(self, record_id, exclude_intake_id=None):
+        if not self.db_path.exists():
+            return []
+        with _connect_readonly(self.db_path) as conn:
+            if not _has_table(conn, "hardware_intakes"):
+                return []
+            rows = conn.execute(
+                "select intake_id, snapshot_hash, payload_json from hardware_intakes where intake_status in ('accepted', 'published') order by intake_id"
+            ).fetchall()
+        intents = []
+        for intake_id, digest, encoded in rows:
+            if intake_id == exclude_intake_id:
+                continue
+            intake = json.loads(encoded)
+            if record_id_for(intake) != record_id:
+                continue
+            primary = ((intake.get("publication") or {}).get("stages") or {}).get("primary") or {}
+            intents.append({"intake_id": intake_id, "snapshot_hash": digest,
+                            "primary_status": primary.get("status"), "primary_sha256": primary.get("sha256")})
+        return intents
 
     def save_draft(self, draft):
         if not isinstance(draft, dict) or not draft.get("draft_id"):
             raise ValueError("hardware draft must have draft_id")
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(self.db_path) as conn:
+        with _connect_private(self.db_path) as conn:
             _ensure_schema(conn)
             try:
                 conn.execute(
@@ -95,14 +116,14 @@ class HardwareStore:
     def get_draft(self, draft_id):
         if not self.db_path.exists():
             return None
-        with sqlite3.connect(self.db_path) as conn:
-            _ensure_schema(conn)
+        with _connect_readonly(self.db_path) as conn:
+            if not _has_table(conn, "hardware_drafts"):
+                return None
             row = conn.execute("select payload_json from hardware_drafts where draft_id = ?", (draft_id,)).fetchone()
         return json.loads(row[0]) if row else None
 
     def update_draft(self, draft, expected_revision):
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(self.db_path) as conn:
+        with _connect_private(self.db_path) as conn:
             _ensure_schema(conn)
             changed = conn.execute(
                 "update hardware_drafts set revision = ?, status = ?, payload_json = ?, updated_at = ? where draft_id = ? and revision = ?",
@@ -115,8 +136,7 @@ class HardwareStore:
     def save_analysis_job(self, job):
         if not isinstance(job, dict) or not job.get("job_id") or not job.get("operation_key"):
             raise ValueError("hardware analysis job must have stable identifiers")
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(self.db_path) as conn:
+        with _connect_private(self.db_path) as conn:
             _ensure_schema(conn)
             existing = conn.execute(
                 "select payload_json from hardware_analysis_jobs where operation_key = ?",
@@ -145,8 +165,9 @@ class HardwareStore:
     def get_analysis_job_by_operation(self, operation_key):
         if not self.db_path.exists():
             return None
-        with sqlite3.connect(self.db_path) as conn:
-            _ensure_schema(conn)
+        with _connect_readonly(self.db_path) as conn:
+            if not _has_table(conn, "hardware_analysis_jobs"):
+                return None
             row = conn.execute(
                 "select payload_json from hardware_analysis_jobs where operation_key = ?",
                 (operation_key,),
@@ -156,8 +177,9 @@ class HardwareStore:
     def get_analysis_job(self, job_id):
         if not self.db_path.exists():
             return None
-        with sqlite3.connect(self.db_path) as conn:
-            _ensure_schema(conn)
+        with _connect_readonly(self.db_path) as conn:
+            if not _has_table(conn, "hardware_analysis_jobs"):
+                return None
             row = conn.execute(
                 "select payload_json from hardware_analysis_jobs where job_id = ?",
                 (job_id,),
@@ -166,8 +188,7 @@ class HardwareStore:
 
     def upsert_record(self, record, vault_path, updated_at=None):
         record_id = record_id_for(record)
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(self.db_path) as conn:
+        with _connect_private(self.db_path) as conn:
             _ensure_schema(conn)
             conn.execute(
                 """
@@ -197,8 +218,9 @@ class HardwareStore:
     def get_record(self, record_id):
         if not self.db_path.exists():
             return None
-        with sqlite3.connect(self.db_path) as conn:
-            _ensure_schema(conn)
+        with _connect_readonly(self.db_path) as conn:
+            if not _has_table(conn, "hardware_records"):
+                return None
             row = conn.execute(
                 "select record_json from hardware_records where record_id = ?",
                 (record_id,),
@@ -208,8 +230,9 @@ class HardwareStore:
     def list_records(self, query="", record_type=None, scope=None):
         if not self.db_path.exists():
             return []
-        with sqlite3.connect(self.db_path) as conn:
-            _ensure_schema(conn)
+        with _connect_readonly(self.db_path) as conn:
+            if not _has_table(conn, "hardware_records"):
+                return []
             rows = conn.execute(
                 "select record_json from hardware_records order by updated_at desc, record_id"
             ).fetchall()
@@ -258,13 +281,13 @@ class HardwareStore:
     def count_records(self):
         if not self.db_path.exists():
             return 0
-        with sqlite3.connect(self.db_path) as conn:
-            _ensure_schema(conn)
+        with _connect_readonly(self.db_path) as conn:
+            if not _has_table(conn, "hardware_records"):
+                return 0
             return conn.execute("select count(*) from hardware_records").fetchone()[0]
 
     def record_gap(self, record_id, vault_path, fail_reason):
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(self.db_path) as conn:
+        with _connect_private(self.db_path) as conn:
             _ensure_schema(conn)
             conn.execute(
                 "insert into hardware_mirror_gaps (record_id, vault_path, fail_reason, created_at) values (?, ?, ?, ?)",
@@ -274,9 +297,21 @@ class HardwareStore:
     def open_gap_count(self):
         if not self.db_path.exists():
             return 0
-        with sqlite3.connect(self.db_path) as conn:
-            _ensure_schema(conn)
+        with _connect_readonly(self.db_path) as conn:
+            if not _has_table(conn, "hardware_mirror_gaps"):
+                return 0
             return conn.execute("select count(*) from hardware_mirror_gaps where resolved_at is null").fetchone()[0]
+
+    def resolve_gaps(self, record_id, vault_path):
+        with _connect_private(self.db_path) as conn:
+            conn.execute(
+                "update hardware_mirror_gaps set resolved_at = ? where record_id = ? and vault_path = ? and resolved_at is null",
+                (_now(), record_id, vault_path),
+            )
+
+
+def _has_table(conn, name):
+    return conn.execute("select 1 from sqlite_master where type = 'table' and name = ?", (name,)).fetchone() is not None
 
 
 def record_id_for(record):

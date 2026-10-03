@@ -69,11 +69,24 @@ The accepted hardware namespace is:
 02_Hardware/90_Evidence/     copied photos and future vendor evidence
 ```
 
-Obsidian remains the human-facing primary record. Agent10's SQLite database is
-a rebuildable query mirror; Web projections omit note bodies, local evidence
+Obsidian remains the human-facing primary record. The asset query mirror is
+rebuildable, but hardware SQLite also holds immutable intake snapshots,
+drafts, and publication checkpoints: those operation records cannot be
+reconstructed from published notes alone. Web projections omit note bodies, local evidence
 paths, credentials, and device identity fields. A published record is a
 资料快照 acceptance, not proof of installation, connectivity, or physical
 commissioning.
+
+Distinct stock drafts have distinct batch identities. Repeating final
+acceptance verifies the original snapshot hash and reuses its acceptance;
+`accepted` / `partial` resumes unfinished publication, while `published`
+returns the stored receipt. Successful primary notes are not rewritten on
+retry. Related cards and indexes are refreshed from the latest locked
+record snapshot when that snapshot changes. A resumable operation retains
+private primary/mirror identity proof; if another same-record publication
+intervenes, the old retry is rejected without replacing the newer state.
+Ambiguous legacy recovery is not automatically rewritten. Exact gap cleanup
+remains retryable after its preceding publication checkpoint succeeds.
 
 ## Runtime Configuration
 
@@ -109,6 +122,17 @@ Normal drafts must not contain a final `asset_id`:
 python3 -m asset_library ingest-draft /absolute/path/to/draft.json
 ```
 
+The same idempotent key completely reuses the original note; it does not
+update its content. A private, durable write-intent journal at
+`99_System/audit/.asset-write-operations.jsonl` retains the key, primary
+identity, note hash, and bounded mirror metadata (not the note body). It
+must be preserved with operation state, not deleted as a query cache.
+After a primary write succeeds, retry repairs a failed query mirror without
+creating another note. An ambiguous crash-window identity fails closed.
+Mirror initialization occurs only in the locked write path; validation and
+governance reads remain read-only. Fallback notes and private write metadata
+are created with owner-only permissions.
+
 Agent06 V0 assets use the Agent10-owned adapter:
 
 ```bash
@@ -129,9 +153,18 @@ The HTTP migration contract denies access by default. A host must explicitly aut
 
 `GET /api/asset-library/governance` is read-only. Writer recovery and mirror-gap compaction are explicit, default-denied mutation actions. Mirror retry and promotion reconciliation remain unavailable until their production resolvers are wired. The production Obsidian trust and shared Web wiring were live-verified on 2026-08-07; Agent10 must remain loopback-only and supervisor-managed.
 
+The local HTTP server authenticates before reading request bodies. Bodies
+are limited to 20 MiB with a 10-second read deadline. Codex drafts are
+restricted server-side to the development-capture workflow, approved
+summary/task-summary types, `audit_only`, and `not_indexed`.
+
 ## Verification
 
 ```bash
 python3 -m unittest discover -s tests -v
 PYTHONPYCACHEPREFIX=/tmp/agent10-asset-library-pycache python3 -m compileall -q asset_library tests
 ```
+
+## Local REST transport hardening (2026-10-03)
+
+TZ authorized the minimal Obsidian audit repair. Local REST accepts only loopback base URLs, rejects redirects, and disables environment proxies before adding credentials, including injected transports. Existing self-signed TLS compatibility remains; certificate identity verification is not claimed. Locks, journals, fallback and mirror semantics remain unchanged. Tests use synthetic local servers and temporary data.

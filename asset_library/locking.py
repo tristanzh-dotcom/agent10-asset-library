@@ -1,6 +1,7 @@
 import fcntl
 import json
 import os
+import secrets
 import socket
 import time
 from datetime import datetime, timezone, timedelta
@@ -36,7 +37,8 @@ class VaultWriteLock:
 
     def acquire(self):
         self.lock_path.parent.mkdir(parents=True, exist_ok=True)
-        self._handle = self.lock_path.open("a+", encoding="utf-8")
+        fd = os.open(self.lock_path, os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        self._handle = os.fdopen(fd, "r+", encoding="utf-8")
         deadline = time.monotonic() + self.timeout_seconds
         while True:
             try:
@@ -103,18 +105,36 @@ def recover_writer_state(vault_path, pid_exists=None, clock=None):
     clock = clock or _now_utc8_iso
     report = inspect_writer_state(vault_path, pid_exists=pid_exists)
     audit_dir = vault_path / "99_System" / "audit"
-    if report["stale_locks"]:
-        audit_dir.mkdir(parents=True, exist_ok=True)
-        lock_path = audit_dir / ".asset-writer.lock"
-        for metadata in report["stale_locks"]:
-            event = dict(metadata)
-            event["recovered_at"] = clock()
-            event_path = audit_dir / f"stale-lock-{event.get('operation_id', 'unknown')}.json"
-            event_path.write_text(
-                json.dumps(event, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-                encoding="utf-8",
-            )
-        lock_path.write_text("", encoding="utf-8")
+    if not report["stale_locks"]:
+        return report
+    lock_path = audit_dir / ".asset-writer.lock"
+    fd = os.open(lock_path, os.O_RDWR | getattr(os, "O_NOFOLLOW", 0))
+    with os.fdopen(fd, "r+", encoding="utf-8") as handle:
+        try:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            report["active_locks"] = report["stale_locks"]
+            report["stale_locks"] = []
+            return report
+        try:
+            # Recheck after acquiring the actual lock: PID metadata alone is not authority.
+            report = inspect_writer_state(vault_path, pid_exists=pid_exists)
+            for metadata in report["stale_locks"]:
+                event = {**metadata, "recovered_at": clock()}
+                event_path = audit_dir / f"stale-lock-{secrets.token_hex(8)}.json"
+                event_fd = os.open(event_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                with os.fdopen(event_fd, "w", encoding="utf-8") as event_handle:
+                    json.dump(event, event_handle, ensure_ascii=False, indent=2, sort_keys=True)
+                    event_handle.write("\n")
+                    event_handle.flush()
+                    os.fsync(event_handle.fileno())
+            if report["stale_locks"]:
+                handle.seek(0)
+                handle.truncate()
+                handle.flush()
+                os.fsync(handle.fileno())
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
     return report
 
 

@@ -57,8 +57,16 @@ class ProducerApiService:
 
     def _validate_agent_scope(self, draft):
         agent_id = draft.get("agent_id")
-        if agent_id not in self.allowed_agent_ids:
-            raise ValueError(f"producer agent_id is not enabled for V1: {agent_id}")
+        if not isinstance(agent_id, str) or agent_id not in self.allowed_agent_ids:
+            raise ValueError("producer agent_id is not enabled for V1")
+        if agent_id == "codex":
+            asset_type = draft.get("asset_type")
+            if (draft.get("workflow_id") != "development-capture"
+                or not isinstance(asset_type, str)
+                or asset_type not in {"codex-development-summary", "codex-development-task-summary"}
+                or draft.get("sensitivity") != "audit_only"
+                or draft.get("knowledge_status") != "not_indexed"):
+                raise ValueError("codex requires an audit-only, non-indexed development capture")
 
 
 class UnknownProducerError(Exception):
@@ -70,6 +78,8 @@ def producer_response(method, path, body, service, migration_authorized=False):
         return _json_response(405, {"error": "method_not_allowed"})
     try:
         payload = json.loads(body or "{}")
+        if not isinstance(payload, dict):
+            raise ValueError("JSON body must be an object")
         if path == DRAFTS_ENDPOINT:
             return _json_response(201, service.ingest_draft(payload))
         if path == MIGRATIONS_ENDPOINT:

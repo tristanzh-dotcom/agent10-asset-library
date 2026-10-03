@@ -19,7 +19,7 @@ class FakeTransport:
                 "context": context,
             }
         )
-        path = url.removeprefix("http://obsidian.local")
+        path = url.removeprefix("http://127.0.0.1:27123")
         if method == "GET" and path == "/":
             return json.dumps({"status": "OK", "authenticated": True}).encode("utf-8")
         if method == "GET" and path == "/vault/01_Agents%2FAgent06%2Fnote.md":
@@ -45,7 +45,7 @@ class ObsidianRestClientTests(unittest.TestCase):
     def setUp(self):
         self.transport = FakeTransport()
         self.client = ObsidianRestClient(
-            "http://obsidian.local",
+            "http://127.0.0.1:27123",
             "secret-token",
             verify_tls=False,
             transport=self.transport,
@@ -63,7 +63,7 @@ class ObsidianRestClientTests(unittest.TestCase):
         self.assertEqual(note, "# Note\n")
         self.assertEqual(
             self.transport.requests[-1]["url"],
-            "http://obsidian.local/vault/01_Agents%2FAgent06%2Fnote.md",
+            "http://127.0.0.1:27123/vault/01_Agents%2FAgent06%2Fnote.md",
         )
 
     def test_write_note_puts_markdown(self):

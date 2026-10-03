@@ -70,23 +70,32 @@ class HardwareIndexPublisher:
         self.operation_lock_factory = operation_lock_factory
 
     def publish(self, records, generated_at=None):
+        lock = self.operation_lock_factory("hardware-indexes") if self.operation_lock_factory else _NoopLock()
+        with lock:
+            return self.publish_locked(records, generated_at)
+
+    def publish_locked(self, records, generated_at=None, completed=(), on_written=None):
+        records = records() if callable(records) else records
         bundle = render_hardware_index_bundle(records, generated_at=generated_at)
         written = []
         mode = "rest"
-        lock = self.operation_lock_factory("hardware-indexes") if self.operation_lock_factory else _NoopLock()
-        with lock:
-            for path in INDEX_PATHS:
-                try:
-                    self.rest_client.write_note(path, bundle[path])
-                except Exception as exc:
-                    if self.fallback_writer is None:
-                        return HardwareIndexPublishResult("partial", tuple(written), mode, str(exc))
-                    try:
-                        self.fallback_writer.write_note(path, bundle[path])
-                    except Exception as fallback_exc:
-                        return HardwareIndexPublishResult("partial", tuple(written), "fallback", str(fallback_exc))
-                    mode = "fallback"
+        for path in INDEX_PATHS:
+            if path in completed:
                 written.append(path)
+                continue
+            try:
+                self.rest_client.write_note(path, bundle[path])
+            except Exception as exc:
+                if self.fallback_writer is None:
+                    return HardwareIndexPublishResult("partial", tuple(written), mode, str(exc))
+                try:
+                    self.fallback_writer.write_note(path, bundle[path])
+                except Exception as fallback_exc:
+                    return HardwareIndexPublishResult("partial", tuple(written), "fallback", str(fallback_exc))
+                mode = "fallback"
+            written.append(path)
+            if on_written is not None:
+                on_written(path)
         return HardwareIndexPublishResult("published", tuple(written), mode)
 
 

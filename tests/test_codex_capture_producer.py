@@ -93,6 +93,10 @@ class CodexCaptureProducerTests(unittest.TestCase):
         self.assertEqual("completed", parsed["task_status"])
         self.assertEqual(95, parsed["quality_score"])
         self.assertEqual("reported", parsed["verification_state"])
+        writer = _Writer()
+        draft.pop("asset_id")
+        ProducerApiService(writer).ingest_draft(draft)
+        self.assertEqual(writer.drafts, [draft])
 
     def test_codex_task_summary_preserves_v2_quality_properties(self):
         draft = _draft()

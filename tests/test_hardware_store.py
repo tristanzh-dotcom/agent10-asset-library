@@ -1,5 +1,7 @@
 import tempfile
 import unittest
+import sqlite3
+import hashlib
 from pathlib import Path
 
 from asset_library.hardware_store import HardwareStore
@@ -19,6 +21,64 @@ def intake(operation_key="op-1", draft=None):
 
 
 class HardwareStoreTests(unittest.TestCase):
+    def test_all_readers_leave_absent_empty_and_partial_databases_unchanged(self):
+        for state in ("absent", "empty", "partial"):
+            with self.subTest(state=state), tempfile.TemporaryDirectory() as tmpdir:
+                store = HardwareStore(Path(tmpdir) / "private" / "hardware.sqlite3")
+                if state == "empty":
+                    store.db_path.parent.mkdir()
+                    sqlite3.connect(store.db_path).close()
+                elif state == "partial":
+                    store.save_intake(intake())
+                    with sqlite3.connect(store.db_path) as conn:
+                        for table in ("hardware_records", "hardware_drafts", "hardware_analysis_jobs", "hardware_mirror_gaps"):
+                            conn.execute("drop table " + table)
+                if state != "absent":
+                    store.db_path.chmod(0o640)
+                    before_hash = hashlib.sha256(store.db_path.read_bytes()).hexdigest()
+                    with sqlite3.connect(store.db_path) as conn:
+                        before_schema = conn.execute("select type, name, sql from sqlite_master order by type, name").fetchall()
+                    before_files = set(store.db_path.parent.iterdir())
+                readers = (
+                    (lambda: store.get_intake("missing"), None),
+                    (store.count_intakes, 1 if state == "partial" else 0),
+                    (lambda: store.get_draft("missing"), None),
+                    (lambda: store.get_analysis_job_by_operation("missing"), None),
+                    (lambda: store.get_analysis_job("missing"), None),
+                    (lambda: store.get_record("missing"), None),
+                    (store.list_records, []),
+                    (store.inventory_summary, []),
+                    (store.count_records, 0),
+                    (store.open_gap_count, 0),
+                    (lambda: store.same_record_primary_intents(valid_model()["hardware_model_id"]), []),
+                )
+                for reader, expected in readers:
+                    self.assertEqual(reader(), expected)
+                if state == "absent":
+                    self.assertFalse(store.db_path.parent.exists())
+                else:
+                    self.assertEqual(hashlib.sha256(store.db_path.read_bytes()).hexdigest(), before_hash)
+                    self.assertEqual(store.db_path.stat().st_mode & 0o777, 0o640)
+                    with sqlite3.connect(store.db_path) as conn:
+                        self.assertEqual(conn.execute("select type, name, sql from sqlite_master order by type, name").fetchall(), before_schema)
+                    self.assertEqual(set(store.db_path.parent.iterdir()), before_files)
+                store.save_intake(intake("op-next"))
+                self.assertEqual(store.count_intakes(), 2 if state == "partial" else 1)
+                self.assertEqual(store.db_path.stat().st_mode & 0o777, 0o600)
+
+    def test_private_hardware_db_permissions_are_tightened_only_by_writes(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = HardwareStore(Path(tmpdir) / "private" / "hardware.sqlite3")
+            self.assertIsNone(store.get_intake("missing"))
+            self.assertFalse(store.db_path.parent.exists())
+            store.save_intake(intake())
+            self.assertEqual(store.db_path.stat().st_mode & 0o777, 0o600)
+            store.db_path.chmod(0o644)
+            store.get_intake("hwi_op-1")
+            self.assertEqual(store.db_path.stat().st_mode & 0o777, 0o644)
+            store.update_intake(intake())
+            self.assertEqual(store.db_path.stat().st_mode & 0o777, 0o600)
+
     def test_save_intake_reuses_same_operation_key_without_duplicate(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             store = HardwareStore(Path(tmpdir) / "hardware.sqlite3")

@@ -75,6 +75,16 @@ class VaultFilesystemCollisionProbe:
             return True
         return target.exists()
 
+    def read_note_if_exists(self, vault_path):
+        target = (self.vault_path / vault_path).resolve()
+        try:
+            target.relative_to(self.vault_path)
+        except ValueError as exc:
+            raise ValueError("operation path escapes Vault") from exc
+        if not target.exists():
+            return None
+        return target.read_bytes().decode("utf-8")
+
     def asset_id_exists(self, asset_id):
         agents_root = self.vault_path / "01_Agents"
         if not agents_root.exists():

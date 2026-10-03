@@ -1,5 +1,8 @@
 from dataclasses import dataclass
 from contextlib import nullcontext
+import hashlib
+
+from .collision import idempotent_key
 
 from .frontmatter import prepare_frontmatter_fields, render_note
 from .naming import generate_asset_id, sanitize_short_title
@@ -59,6 +62,21 @@ class RestFirstAssetWriter:
             path = build_asset_note_path(working)
             lock = self._operation_lock(working["asset_id"])
             with lock:
+                initialize = getattr(self.mirror, "initialize", None)
+                if initialize:
+                    initialize()
+                journal = self.mirror_gap_journal
+                get_operation = getattr(journal, "get_operation", None)
+                operation = get_operation(idempotent_key(working)) if get_operation else None
+                if operation:
+                    reused = self._resume_operation(operation)
+                    if reused is not None:
+                        return reused
+                    # A durable intent with no primary note retries its original identity.
+                    working["asset_id"] = operation["asset_id"]
+                    path = operation["vault_path"]
+                    if _note_hash(render_note(working)) != operation["note_hash"]:
+                        raise ValueError("unfinished asset write requires the original draft")
                 collision = self._check_collision(working, path)
                 if collision:
                     if collision.get("action") == "reuse_existing":
@@ -74,28 +92,63 @@ class RestFirstAssetWriter:
                     raise ValueError(collision.get("reason", "asset collision rejected"))
 
                 markdown = render_note(working)
+                if get_operation:
+                    operation = {
+                        "idempotent_key": idempotent_key(working),
+                        "asset_id": working["asset_id"], "vault_path": path,
+                        "note_hash": _note_hash(markdown), "state": "intended",
+                        "draft": _mirror_metadata(working),
+                    }
+                    journal.save_operation(operation)
+                mode, error = "rest", ""
                 try:
                     self.rest_client.write_note(path, markdown)
                 except Exception as exc:
                     if self.fallback_writer is None:
                         raise
                     self.fallback_writer.write_note(path, markdown)
-                    mirror_status = self._upsert_mirror(working, path)
-                    return AssetWriteResult(
-                        mode="fallback",
-                        path=path,
-                        asset_id=working["asset_id"],
-                        mirror_status=mirror_status,
-                        error=str(exc),
-                    )
+                    mode, error = "fallback", str(exc)
+                if operation:
+                    operation.update(state="primary_written", mode=mode)
+                    journal.save_operation(operation)
                 mirror_status = self._upsert_mirror(working, path)
+                if operation and mirror_status == "upserted":
+                    operation["state"] = "complete"
+                    journal.save_operation(operation)
                 return AssetWriteResult(
-                    mode="rest",
+                    mode=mode,
                     path=path,
                     asset_id=working["asset_id"],
                     mirror_status=mirror_status,
+                    error=error,
                 )
         raise ValueError("asset_id collision retry limit exhausted")
+
+    def _resume_operation(self, operation):
+        probe = getattr(self.collision_checker, "vault_probe", None)
+        if probe is None:
+            raise ValueError("cannot verify unfinished asset write without a Vault probe")
+        note = probe.read_note_if_exists(operation["vault_path"])
+        if note is None:
+            if operation["state"] == "intended":
+                return None
+            raise ValueError("previously written Vault note is missing")
+        if operation["state"] == "intended":
+            if _note_hash(note) != operation["note_hash"]:
+                raise ValueError("unfinished asset write conflicts with the existing Vault note")
+            operation["state"] = "primary_written"
+            self.mirror_gap_journal.save_operation(operation)
+        existing = self.mirror.get_by_asset_id(operation["asset_id"]) if self.mirror else None
+        if operation["state"] == "complete" and existing:
+            # Complete operations and user-edited notes are immutable on resubmission.
+            self.mirror_gap_journal.resolve_asset_gaps(operation["asset_id"], operation["vault_path"])
+            return AssetWriteResult("idempotent_reuse", operation["vault_path"], operation["asset_id"], "reused")
+        mirror_status = self._upsert_mirror(operation["draft"], operation["vault_path"])
+        if mirror_status == "upserted":
+            operation["state"] = "complete"
+            self.mirror_gap_journal.save_operation(operation)
+            self.mirror_gap_journal.resolve_asset_gaps(operation["asset_id"], operation["vault_path"])
+        return AssetWriteResult("idempotent_reuse", operation["vault_path"], operation["asset_id"], mirror_status)
 
     def _upsert_mirror(self, draft, path):
         if self.mirror is None:
@@ -148,3 +201,15 @@ def _date_from_asset_id(asset_id):
         raw = parts[1]
         return f"{raw[0:4]}-{raw[4:6]}-{raw[6:8]}"
     raise ValueError(f"asset_id has invalid date format: {asset_id}")
+
+
+def _note_hash(markdown):
+    return hashlib.sha256(markdown.encode("utf-8")).hexdigest()
+
+
+def _mirror_metadata(draft):
+    # No body or source reference content in the private recovery journal.
+    fields = ("asset_id", "asset_schema_version", "title", "agent_id", "workflow_id", "asset_type",
+              "status", "knowledge_status", "source_status", "sensitivity", "source_content_hash",
+              "hash_source", "created_at", "updated_at", "source_asset_path", "tags")
+    return {field: draft[field] for field in fields if field in draft}

@@ -1,10 +1,13 @@
 import re
+import hashlib
 from dataclasses import dataclass
+from urllib.error import HTTPError
 
 from .frontmatter import _render_scalar, _render_yaml_value
 from .naming import sanitize_short_title
-from .hardware_store import record_id_for
+from .hardware_store import record_id_for, _public_record
 from .hardware_labels import localized_hardware_name
+from .hardware_intake import snapshot_hash
 
 
 CATEGORY_FOLDERS = {
@@ -230,6 +233,7 @@ def _frontmatter_fields(record):
         "draft_revision",
         "intake_status",
         "display_name_zh",
+        "publication",
     }
     preferred = [
         "record_type",
@@ -770,56 +774,106 @@ class HardwareNotePublisher:
         self.index_publisher = index_publisher
 
     def publish(self, accepted):
+        lock = self.operation_lock_factory(f"hardware-write:{record_id_for(accepted)}") if self.operation_lock_factory else _NoopLock()
+        with lock:
+            return self.publish_locked(accepted)
+
+    def publish_locked(self, accepted):
         if accepted.get("intake_status") != "accepted":
             raise ValueError("hardware record must be accepted before publication")
         acceptance = accepted.get("acceptance") or {}
         if acceptance.get("snapshot_hash") != accepted.get("snapshot_hash"):
             raise ValueError("hardware acceptance snapshot does not match intake snapshot")
-        context_records = [accepted]
-        if self.index_publisher is not None:
-            try:
-                context_records = _merge_records(self.store.list_records(), accepted)
-            except Exception:
-                context_records = [accepted]
+        publication = accepted.setdefault("publication", {})
+        stages = publication.setdefault("stages", {})
+        context_records = _merge_records(self.store.list_records(), accepted) if self.index_publisher is not None else [accepted]
         path = hardware_note_path(accepted)
         markdown = render_hardware_note(
             accepted,
             related_records=context_records if self.index_publisher is not None else None,
         )
-        lock = self.operation_lock_factory(f"hardware-write:{record_id_for(accepted)}") if self.operation_lock_factory else _NoopLock()
-        with lock:
+        primary = stages.get("primary") or {}
+        mode = primary.get("mode", "rest")
+        if primary:
+            self._verify_recovery_preimage(accepted, primary, stages)
+        if primary.get("status") == "done":
+            existing, _read_mode = self._read_primary(path)
+            if not _accepted_note_identity(existing, accepted):
+                raise ValueError("hardware primary was replaced; refusing stale publication")
+        if primary.get("status") in {"unknown", "pending"}:
+            existing, read_mode = self._read_primary(path)
+            if existing is not None:
+                matches = _accepted_note_identity(existing, accepted) if primary.get("status") == "unknown" else _markdown_hash(existing) == primary.get("sha256")
+                if not matches:
+                    raise ValueError("hardware primary identity cannot be reconciled")
+                mode = read_mode
+                stages["primary"] = {**primary, "sha256": _markdown_hash(existing), "status": "done", "mode": mode}
+                self._save_progress(accepted)
+        if (stages.get("primary") or {}).get("status") != "done":
+            current = self.store.get_record(record_id_for(accepted)) if hasattr(self.store, "get_record") else None
+            stages["primary"] = {"status": "pending", "sha256": _markdown_hash(markdown),
+                                 "prior_mirror_hash": _mirror_identity(current),
+                                 "prior_intents_hash": snapshot_hash({"intents": self._same_record_intents(accepted)})}
+            self._save_progress(accepted)
+            mode = self._write_note(path, markdown)
+            stages["primary"].update(status="done", mode=mode)
+            self._save_progress(accepted)
+        if not stages.get("mirror"):
             try:
-                mode = self._write_note(path, markdown)
-            except Exception:
-                raise
-            try:
-                self.store.upsert_record(accepted, path)
+                self.store.upsert_record({key: value for key, value in accepted.items() if key != "publication"}, path)
             except Exception as exc:
                 self.store.record_gap(record_id_for(accepted), path, str(exc))
                 return HardwarePublishResult("partial", record_id_for(accepted), path, mode, "gap_recorded")
+            stages["mirror"] = True
+            self._save_progress(accepted)
+        self._resolve_gaps(record_id_for(accepted), path)
         if self.index_publisher is not None:
             related_gap = False
             index_status = "partial"
             try:
                 records = self.store.list_records()
+                projection_hash = snapshot_hash({"records": sorted(records, key=record_id_for)})
+                if stages.get("projection_hash") != projection_hash:
+                    stages.update(projection_hash=projection_hash, related_written=[], related=False, indexes_written=[], indexes=False)
+                    self._save_progress(accepted)
+                completed_related = stages.setdefault("related_written", [])
                 for related in records:
                     related_id = record_id_for(related)
-                    if related_id == record_id_for(accepted) or related_id not in _related_record_ids(accepted, records):
+                    if related_id == record_id_for(accepted) or related_id in completed_related or related_id not in _related_record_ids(accepted, records):
                         continue
                     related_path = hardware_note_path(related)
                     related_markdown = render_hardware_note(related, related_records=records)
-                    related_lock = self.operation_lock_factory(f"hardware-write:{related_id}") if self.operation_lock_factory else _NoopLock()
                     try:
-                        with related_lock:
-                            related_mode = self._write_note(related_path, related_markdown)
+                        related_mode = self._write_note(related_path, related_markdown)
                         if related_mode == "fallback":
                             mode = "fallback"
+                        completed_related.append(related_id)
+                        self._save_progress(accepted)
+                        self._resolve_gaps(related_id, related_path)
                     except Exception as exc:
                         related_gap = True
                         self.store.record_gap(related_id, related_path, str(exc))
-                index_result = self.index_publisher.publish(records)
-                index_status = getattr(index_result, "status", "partial")
+                if not related_gap:
+                    stages["related"] = True
+                    self._save_progress(accepted)
+                if not stages.get("indexes"):
+                    completed_indexes = stages.setdefault("indexes_written", [])
+                    def on_written(index_path):
+                        completed_indexes.append(index_path)
+                        self._save_progress(accepted)
+                    if hasattr(self.index_publisher, "publish_locked"):
+                        index_result = self.index_publisher.publish_locked(records, completed=completed_indexes, on_written=on_written)
+                    else:
+                        index_result = self.index_publisher.publish(records)
+                    index_status = getattr(index_result, "status", "partial")
+                    if index_status == "published":
+                        stages["indexes"] = True
+                        self._save_progress(accepted)
+                else:
+                    index_result = None
+                    index_status = "published"
                 if index_status == "published" and not related_gap:
+                    self._resolve_gaps("hardware-indexes", "02_Hardware/00_Index")
                     return HardwarePublishResult("published", record_id_for(accepted), path, mode, "upserted", "published")
                 reason = getattr(index_result, "error", "") or f"index publication status: {index_status}"
                 if related_gap:
@@ -834,6 +888,56 @@ class HardwareNotePublisher:
             return HardwarePublishResult("partial", record_id_for(accepted), path, mode, "index_gap", "partial")
         return HardwarePublishResult("published", record_id_for(accepted), path, mode, "upserted")
 
+    def _save_progress(self, accepted):
+        if accepted.get("intake_id") and hasattr(self.store, "update_intake"):
+            self.store.update_intake(accepted)
+
+    def _same_record_intents(self, accepted):
+        query = getattr(self.store, "same_record_primary_intents", None)
+        return query(record_id_for(accepted), accepted.get("intake_id")) if query else []
+
+    def _verify_recovery_preimage(self, accepted, primary, stages):
+        current = self.store.get_record(record_id_for(accepted)) if hasattr(self.store, "get_record") else None
+        current_identity = _mirror_identity(current)
+        own_identity = _mirror_identity(accepted)
+        intents = self._same_record_intents(accepted)
+        if "prior_intents_hash" in primary:
+            if snapshot_hash({"intents": intents}) != primary["prior_intents_hash"]:
+                raise ValueError("hardware primary intent changed; refusing stale publication")
+        elif intents:
+            raise ValueError("hardware recovery lacks prior intent proof")
+        if stages.get("mirror") and current_identity != own_identity:
+            raise ValueError("hardware mirror was replaced; refusing stale publication")
+        if current_identity != own_identity:
+            if "prior_mirror_hash" in primary:
+                if current_identity != primary["prior_mirror_hash"]:
+                    raise ValueError("hardware mirror preimage changed; refusing stale publication")
+            elif current is not None:
+                raise ValueError("hardware recovery lacks prior mirror proof")
+
+    def _read_primary(self, path):
+        rest_missing = False
+        if hasattr(self.rest_client, "read_note"):
+            try:
+                content = self.rest_client.read_note(path)
+                if content is not None:
+                    return content, "rest"
+                rest_missing = True
+            except Exception as exc:
+                cause = exc.__cause__ or exc
+                rest_missing = isinstance(cause, HTTPError) and cause.code == 404
+        if self.fallback_writer is not None and hasattr(self.fallback_writer, "_resolve_target"):
+            target = self.fallback_writer._resolve_target(path)
+            if target.is_file():
+                return target.read_bytes().decode("utf-8"), "fallback"
+        if rest_missing:
+            return None, "rest"
+        raise ValueError("hardware primary readback is unavailable; refusing to rewrite")
+
+    def _resolve_gaps(self, record_id, path):
+        if hasattr(self.store, "resolve_gaps"):
+            self.store.resolve_gaps(record_id, path)
+
     def _write_note(self, path, markdown):
         try:
             self.rest_client.write_note(path, markdown)
@@ -843,6 +947,31 @@ class HardwareNotePublisher:
             self.fallback_writer.write_note(path, markdown)
             return "fallback"
         return "rest"
+
+
+def _markdown_hash(markdown):
+    return hashlib.sha256(markdown.encode("utf-8")).hexdigest()
+
+
+def _mirror_identity(record):
+    if record is None:
+        return None
+    return snapshot_hash(_public_record({key: value for key, value in record.items() if key != "publication"}))
+
+
+def _accepted_note_identity(markdown, accepted):
+    if not isinstance(markdown, str) or not markdown.startswith("---\n"):
+        return False
+    parts = markdown.split("---\n", 2)
+    if len(parts) != 3:
+        return False
+    frontmatter = parts[1]
+    identity_field = {"hardware_model": "hardware_model_id", "hardware_unit": "hardware_unit_id", "assembly_layout": "layout_id"}[accepted["record_type"]]
+    acceptance = re.search(r"^acceptance:\n((?:[ \t].*\n)+)", frontmatter, re.MULTILINE)
+    return (re.search(rf"^{identity_field}: {re.escape(_render_scalar(record_id_for(accepted)))}$", frontmatter, re.MULTILINE) is not None
+            and re.search(rf'^record_type: {re.escape(_render_scalar(accepted["record_type"]))}$', frontmatter, re.MULTILINE) is not None
+            and acceptance is not None
+            and re.search(rf'^  "snapshot_hash": {re.escape(_render_scalar(accepted["snapshot_hash"]))}$', acceptance.group(1), re.MULTILINE) is not None)
 
 
 def _merge_records(records, accepted):

@@ -2,7 +2,8 @@ import json
 import ssl
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote
-from urllib.request import Request, urlopen
+from urllib.request import Request
+from .local_http import open_local_request as urlopen, validate_loopback_url
 
 
 class ObsidianRestError(RuntimeError):
@@ -11,7 +12,7 @@ class ObsidianRestError(RuntimeError):
 
 class ObsidianRestClient:
     def __init__(self, base_url, api_key, verify_tls=False, timeout=5, transport=None):
-        self.base_url = base_url.rstrip("/")
+        self.base_url = validate_loopback_url(base_url)
         self.api_key = api_key
         self.timeout = timeout
         self.transport = transport
